@@ -36,7 +36,8 @@ from version import APP_VERSION, APP_NAME, GITHUB_REPO
 # Token GitHub para repositório privado
 # Cole seu token aqui: ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 # Gere em: github.com → Settings → Developer settings → Personal access tokens → Tokens (classic)
-GITHUB_TOKEN = "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"  # ← coloque seu token aqui
+GITHUB_TOKEN = "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" 
+#GITHUB_TOKEN = "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" # ← coloque seu token aqui
 
 # Nome do asset no release do GitHub
 ASSET_NAME = "Magical_Conciliacao.exe"
