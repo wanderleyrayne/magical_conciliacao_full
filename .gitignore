@@ -1,0 +1,29 @@
+# Build outputs — nunca subir para o GitHub
+dist/
+build/
+*.spec
+
+# Banco de dados local — cada usuário tem o seu
+data/
+*.db
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Backups locais
+data/backups/
+
+# Arquivos temporários
+*.tmp
+*.log
+.env
+
+# VS Code
+.vscode/
+
+# Windows
+Thumbs.db
+desktop.ini
