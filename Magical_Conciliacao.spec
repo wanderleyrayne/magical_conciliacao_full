@@ -2,10 +2,12 @@
 from PyInstaller.utils.hooks import collect_data_files
 from PyInstaller.utils.hooks import collect_submodules
 
-datas = [('assets', 'assets')]
-hiddenimports = ['openpyxl', 'et_xmlfile']
+datas = [('assets', 'assets'), ('core', 'core'), ('database', 'database'), ('ui', 'ui'), ('utils', 'utils')]
+hiddenimports = ['openpyxl', 'et_xmlfile', 'openpyxl.cell._writer', 'rapidfuzz', 'rapidfuzz.fuzz', 'rapidfuzz.process', 'requests', 'numpy', 'numpy.core']
 datas += collect_data_files('openpyxl')
 hiddenimports += collect_submodules('pandas')
+hiddenimports += collect_submodules('openpyxl')
+hiddenimports += collect_submodules('numpy')
 
 
 a = Analysis(
