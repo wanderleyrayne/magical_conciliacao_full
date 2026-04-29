@@ -711,11 +711,14 @@ class SettingsWindow:
                     parent=self.top
                 )
                 return
-            # Atualiza o contador de entidades na status bar
+            # Atualiza o contador de entidades
             count = self.repo.count_entities_master()
-            self.status_callback(
-                f"Base de entidades atualizada | Entidades em base: {count}"
-            )
+            try:
+                self.status_callback(
+                    f"Base de entidades atualizada | Entidades em base: {count}"
+                )
+            except Exception:
+                pass  # status_callback opcional
             messagebox.showinfo(
                 "Importação concluída",
                 f"Base de entidades importada com sucesso!\n\n"
