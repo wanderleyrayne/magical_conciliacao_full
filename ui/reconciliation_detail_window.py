@@ -1064,27 +1064,23 @@ class ReconciliationDetailWindow:
             return None
 
         def _same_person(favor_banco, doc_banco, desc_erp):
-            """
-            Verifica se o favorecido do banco e a descrição do ERP
-            pertencem à mesma pessoa/entidade.
+            import re as _re2
 
-            Retorna (same: bool, confidence: float, reason: str)
-            """
-            # Palavras genéricas que não são nomes — ignora no matching
+            def _tokenize_local(text):
+                return set(_re2.findall(r'[A-ZÁÉÍÓÚÂÊÎÔÛÃÕÇ]{3,}', str(text or '').upper()))
+
             STOP_WORDS = {
                 'PAGAMENTOS', 'PAGAMENTO', 'PASSAGEM', 'ALMOCO', 'ALMOÇO',
                 'REEMBOLSO', 'REPASSE', 'RECEBIMENTO', 'RECEBIMENTOS',
                 'PARA', 'PELA', 'PELO', 'PIX', 'TED', 'DOC', 'ENVIADO',
                 'FORNECEDORES', 'FORNECEDOR', 'PRESTACAO', 'SERVICOS',
-                'INICIO', 'PAGAMENTOS', 'DRE', 'MKT', 'MARKETING',
+                'INICIO', 'DRE', 'MKT', 'MARKETING',
                 'VENDEDOR', 'GERENTE', 'COORDENADOR', 'ESCRITORIO',
                 'VT', 'VA', 'VR', 'BONUS', 'CAMPANHA', 'CONTRATO',
             }
 
             def _clean_tokens(text):
-                """Extrai tokens relevantes removendo stop words."""
-                tokens = _tokenize(text)
-                return tokens - STOP_WORDS
+                return _tokenize_local(text) - STOP_WORDS
 
             # 1. Score de texto direto com tokens limpos
             clean_banco = _clean_tokens(favor_banco)
@@ -1155,22 +1151,35 @@ class ReconciliationDetailWindow:
             return False, 0.05, f"pessoas distintas: {cargo_banco} ≠ {cargo_erp}"
 
         def _find_suggestions(val_banco, favor_banco, desc_banco, data_banco,
-                               doc_banco=""):
+                               doc_banco="", search_hint=""):
             """
             Engine de sugestão com janela adaptativa e múltiplas opções.
-            Retorna lista de opções: [(conf, combo, janela_dias, aviso)]
+            search_hint: termo digitado no campo de pesquisa — filtra candidatos ERP.
             """
             try:
                 import pandas as _pd
                 dt_b = _pd.to_datetime(data_banco, errors="coerce")
-            except Exception:
+#] dt_b={dt_b} data_banco='{data_banco}'")
+            except Exception as ex:
                 dt_b = None
+#] dt_b=None erro={ex}")
 
             df_erp = self.original_df[
                 self.original_df["status"].astype(str).str.upper() == "SOMENTE_ERP"
             ].copy()
             if df_erp.empty:
                 return []
+
+            # Se há um termo de pesquisa, pré-filtra os candidatos ERP por ele
+            if search_hint and len(search_hint) >= 3:
+                mask = df_erp.apply(lambda r: any(
+                    search_hint in str(v).upper()
+                    for v in r.values if v is not None
+                ), axis=1)
+                df_erp_hint = df_erp[mask]
+                # Usa o filtro se encontrou candidatos, senão usa todos
+                if not df_erp_hint.empty:
+                    df_erp = df_erp_hint
 
             try:
                 from core.match_model import MatchModelManager, extract_features as _extract
@@ -1187,20 +1196,29 @@ class ReconciliationDetailWindow:
                     dias_diff = 0
                     try:
                         import pandas as _pd2
+                        # Tenta data_erp primeiro, depois data_banco como fallback
                         dt_e = _pd2.to_datetime(r.get("data_erp"), errors="coerce")
+                        if _pd2.isna(dt_e):
+                            dt_e = _pd2.to_datetime(r.get("data_banco"), errors="coerce")
                         if dt_b is not None and not _pd2.isna(dt_e):
                             diff = abs((dt_e - dt_b).days)
                             if diff > janela_dias:
                                 continue
                             dias_diff = diff
+                        elif dt_b is not None and _pd2.isna(dt_e):
+                            # Sem data válida — inclui mas com dias_diff alto
+                            dias_diff = janela_dias
                     except Exception:
                         pass
                     try:
                         v = abs(float(r.get("valor_erp") or 0))
                     except Exception:
                         v = 0.0
+                    if v <= 0:
+                        continue
                     desc_erp = str(r.get("descricao_erp") or "")
                     same, id_conf, reason = _same_person(favor_banco, doc_banco, desc_erp)
+#2] ID={r.get('id')} val={v} dias={dias_diff} same={same} conf={id_conf:.2f} reason='{reason}'")
                     if not same:
                         continue
                     deps.append({
@@ -1209,17 +1227,29 @@ class ReconciliationDetailWindow:
                         "id_conf": id_conf, "reason": reason,
                         "dias_diff": dias_diff,
                     })
+                # Ordena por proximidade de data — subset sum testa os mais próximos primeiro
+                deps.sort(key=lambda d: (d["dias_diff"], -d["id_conf"]))
                 return deps
 
             def _subset_sum(deps):
                 results = []
+                deps_validos = [d for d in deps if d["value"] <= target + 0.02]
+#] subset_sum: target={target} deps={len(deps)} validos={len(deps_validos)} ids={[d['rid'] for d in deps_validos]}")
+
                 def bt(idx, rem, chosen):
                     if abs(rem) < 0.02:
-                        results.append(list(chosen)); return
-                    if idx >= len(deps) or rem < -0.02: return
-                    bt(idx+1, round(rem - deps[idx]["value"], 2), chosen + [deps[idx]])
+                        results.append(list(chosen))
+                        return
+                    if idx >= len(deps_validos) or rem < -0.02:
+                        return
+                    if len(results) >= 15:
+                        return
+                    bt(idx+1, round(rem - deps_validos[idx]["value"], 2),
+                       chosen + [deps_validos[idx]])
                     bt(idx+1, rem, chosen)
+
                 bt(0, target, [])
+#] subset_sum encontrou {len(results)} combinações")
                 return results
 
             def _score_combo(combo, janela_dias):
@@ -1238,12 +1268,44 @@ class ReconciliationDetailWindow:
                             scores.append(prob)
                         except Exception:
                             scores.append(d["id_conf"])
-                    base_conf = sum(scores) / len(scores) if scores else 0.5
+                    model_conf = sum(scores) / len(scores) if scores else 0.5
+                    # Usa o maior entre o modelo e a confiança de identidade
+                    # (evita o modelo penalizar demais sem exemplos suficientes)
+                    identity_conf = sum(d["id_conf"] for d in combo) / len(combo)
+                    base_conf = max(model_conf, identity_conf * 0.8)
                 else:
                     base_conf = sum(d["id_conf"] for d in combo) / len(combo)
-                penalty = 0.0 if janela_dias <= 15 else 0.15 if janela_dias <= 60 else 0.30
+
+                # Penalidade por janela
+                if janela_dias <= 15:
+                    janela_penalty = 0.0
+                elif janela_dias <= 60:
+                    janela_penalty = 0.15
+                else:
+                    janela_penalty = 0.30
+
+                # Penalidade por distância de dias
+                max_dias = max(d["dias_diff"] for d in combo)
+                if max_dias <= 1:
+                    data_penalty = 0.0
+                elif max_dias <= 7:
+                    data_penalty = 0.05
+                elif max_dias <= 15:
+                    data_penalty = 0.10
+                elif max_dias <= 30:
+                    data_penalty = 0.20
+                else:
+                    data_penalty = 0.35
+
                 size_penalty = max(0, (len(combo) - 2) * 0.03)
-                return round(max(0.0, base_conf - penalty - size_penalty), 2)
+                score = round(max(0.0, base_conf - janela_penalty - data_penalty - size_penalty), 2)
+
+                # Garantia mínima: valor fecha exatamente + mesma pessoa → sempre mostra
+                soma_combo = sum(d["value"] for d in combo)
+                if abs(soma_combo - val_banco) < 0.02 and base_conf >= 0.4:
+                    score = max(score, 0.30)
+
+                return score
 
             opcoes = []
             seen_rids = set()
@@ -1262,14 +1324,102 @@ class ReconciliationDetailWindow:
                         continue
                     seen_rids.add(rids_key)
                     conf = _score_combo(combo, janela)
+#] combo={[d['rid'] for d in combo]} conf={conf} janela={janela}")
                     if conf < 0.25:
+#] descartado conf<0.25")
                         continue
                     max_dias = max(d["dias_diff"] for d in combo)
                     aviso = (aviso_template.format(dias=max_dias)
                              if aviso_template else None)
                     opcoes.append((conf, combo, janela, aviso))
 
+#] total opcoes: {len(opcoes)}")
             opcoes.sort(key=lambda x: (-x[0], x[2], len(x[1])))
+            return opcoes[:3]
+
+        def _find_suggestions_inverso(soma_banco, fav_banco, data_banco,
+                                       doc_banco="", search_hint=""):
+            """
+            Caso inverso: N lançamentos no banco → 1 lançamento no ERP.
+            Busca SOMENTE_ERP cujo valor = soma dos bancos selecionados.
+            Retorna lista de opções: [(conf, [item_erp], janela_dias, aviso)]
+            onde item_erp tem rid, row, value, desc, id_conf, dias_diff.
+            """
+            try:
+                import pandas as _pd
+                dt_b = _pd.to_datetime(data_banco, errors="coerce")
+            except Exception:
+                dt_b = None
+
+            df_erp = self.original_df[
+                self.original_df["status"].astype(str).str.upper() == "SOMENTE_ERP"
+            ].copy()
+            if df_erp.empty:
+                return []
+
+            if search_hint and len(search_hint) >= 3:
+                mask = df_erp.apply(lambda r: any(
+                    search_hint in str(v).upper()
+                    for v in r.values if v is not None), axis=1)
+                df_hint = df_erp[mask]
+                if not df_hint.empty:
+                    df_erp = df_hint
+
+            target  = round(soma_banco, 2)
+            opcoes  = []
+
+            for janela, aviso_template in [
+                (15,  None),
+                (60,  "⚠ Datas distantes ({dias} dias) — possível pagamento atrasado"),
+                (180, "⚠ Janela ampla ({dias} dias) — verificar se são do mesmo período"),
+            ]:
+                for _, r in df_erp.iterrows():
+                    # Filtro de data
+                    dias_diff = 0
+                    try:
+                        import pandas as _pd2
+                        dt_e = _pd2.to_datetime(r.get("data_erp"), errors="coerce")
+                        if _pd2.isna(dt_e):
+                            dt_e = _pd2.to_datetime(r.get("data_banco"), errors="coerce")
+                        if dt_b is not None and not _pd2.isna(dt_e):
+                            diff = abs((dt_e - dt_b).days)
+                            if diff > janela:
+                                continue
+                            dias_diff = diff
+                    except Exception:
+                        pass
+
+                    try:
+                        v = abs(float(r.get("valor_erp") or 0))
+                    except Exception:
+                        continue
+
+                    # Valor do ERP deve ser igual à soma dos bancos
+                    if abs(v - target) > 0.02:
+                        continue
+
+                    desc_erp = str(r.get("descricao_erp") or "")
+                    same, id_conf, reason = _same_person(fav_banco, doc_banco, desc_erp)
+                    if not same:
+                        continue
+
+                    rid = int(r.get("id", 0))
+                    item = {"rid": rid, "row": r, "value": v,
+                            "desc": desc_erp, "id_conf": id_conf,
+                            "dias_diff": dias_diff}
+
+                    # Score
+                    janela_penalty = 0.0 if janela <= 15 else 0.15 if janela <= 60 else 0.30
+                    data_penalty   = (0.0 if dias_diff <= 1 else
+                                      0.05 if dias_diff <= 7 else
+                                      0.10 if dias_diff <= 15 else
+                                      0.20 if dias_diff <= 30 else 0.35)
+                    conf = round(max(0.30, id_conf - janela_penalty - data_penalty), 2)
+
+                    aviso = aviso_template.format(dias=dias_diff) if aviso_template else None
+                    opcoes.append((conf, [item], janela, aviso))
+
+            opcoes.sort(key=lambda x: (-x[0], x[2]))
             return opcoes[:3]
 
 
@@ -1385,13 +1535,32 @@ class ReconciliationDetailWindow:
 
         # Sugestão automática se só banco foi selecionado
         if rows_banco and not rows_erp:
-            val_b  = abs(float(rows_banco[0][1].get("valor_banco") or 0))
-            fav_b  = str(rows_banco[0][1].get("favorecido_banco") or "")
-            desc_b = str(rows_banco[0][1].get("descricao_banco") or "")
-            data_b = str(rows_banco[0][1].get("data_banco") or "")[:10]
-            doc_b  = str(rows_banco[0][1].get("documento_banco") or "")
+            search_hint = self.search_var.get().strip().upper() if hasattr(self, "search_var") else ""
 
-            sugestoes = _find_suggestions(val_b, fav_b, desc_b, data_b, doc_b)
+            # ── Caso normal: 1 banco → N ERP ──────────────────────────────
+            if len(rows_banco) == 1:
+                val_b  = abs(float(rows_banco[0][1].get("valor_banco") or 0))
+                fav_b  = str(rows_banco[0][1].get("favorecido_banco") or "")
+                desc_b = str(rows_banco[0][1].get("descricao_banco") or "")
+                data_b = str(rows_banco[0][1].get("data_banco") or "")[:10]
+                doc_b  = str(rows_banco[0][1].get("documento_banco") or "")
+
+                sugestoes = _find_suggestions(val_b, fav_b, desc_b, data_b, doc_b, search_hint)
+                if not sugestoes and search_hint:
+                    sugestoes = _find_suggestions(val_b, fav_b, desc_b, data_b, doc_b, "")
+
+            # ── Caso inverso: N banco → 1 ERP ─────────────────────────────
+            else:
+                soma_banco = round(sum(
+                    abs(float(r.get("valor_banco") or 0)) for _, r in rows_banco
+                ), 2)
+                fav_b  = str(rows_banco[0][1].get("favorecido_banco") or "")
+                data_b = str(rows_banco[0][1].get("data_banco") or "")[:10]
+                doc_b  = str(rows_banco[0][1].get("documento_banco") or "")
+
+                sugestoes = _find_suggestions_inverso(
+                    soma_banco, fav_b, data_b, doc_b, search_hint)
+
             if sugestoes:
                 sug_outer = tk.Frame(erp_lf, bg="#f0fdf4", padx=8, pady=6,
                                       relief="flat")
@@ -1424,9 +1593,10 @@ class ReconciliationDetailWindow:
                              fg=conf_cor, bg="#ffffff").pack(side="left")
 
                     soma = sum(d["value"] for d in combo)
+                    val_ref = soma_banco if len(rows_banco) > 1 else val_b
                     tk.Label(hdr_f,
                              text=f"  {brl_fmt(soma)}"
-                                  + ("  ✓ fecha" if abs(soma - val_b) < 0.02 else ""),
+                                  + ("  ✓ fecha" if abs(soma - val_ref) < 0.02 else ""),
                              font=("Arial", 9, "bold"),
                              fg="#166534", bg="#ffffff").pack(side="left")
 
