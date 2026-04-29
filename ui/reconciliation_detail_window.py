@@ -1070,60 +1070,88 @@ class ReconciliationDetailWindow:
 
             Retorna (same: bool, confidence: float, reason: str)
             """
-            # 1. Score de texto direto — mais forte
-            text_score = _score(favor_banco, desc_erp)
-            if text_score >= 0.5:
+            # Palavras genéricas que não são nomes — ignora no matching
+            STOP_WORDS = {
+                'PAGAMENTOS', 'PAGAMENTO', 'PASSAGEM', 'ALMOCO', 'ALMOÇO',
+                'REEMBOLSO', 'REPASSE', 'RECEBIMENTO', 'RECEBIMENTOS',
+                'PARA', 'PELA', 'PELO', 'PIX', 'TED', 'DOC', 'ENVIADO',
+                'FORNECEDORES', 'FORNECEDOR', 'PRESTACAO', 'SERVICOS',
+                'INICIO', 'PAGAMENTOS', 'DRE', 'MKT', 'MARKETING',
+                'VENDEDOR', 'GERENTE', 'COORDENADOR', 'ESCRITORIO',
+                'VT', 'VA', 'VR', 'BONUS', 'CAMPANHA', 'CONTRATO',
+            }
+
+            def _clean_tokens(text):
+                """Extrai tokens relevantes removendo stop words."""
+                tokens = _tokenize(text)
+                return tokens - STOP_WORDS
+
+            # 1. Score de texto direto com tokens limpos
+            clean_banco = _clean_tokens(favor_banco)
+            clean_erp   = _clean_tokens(desc_erp)
+
+            if clean_banco and clean_erp:
+                common    = clean_banco & clean_erp
+                # Containment: % dos tokens do banco presentes no ERP
+                contain_b = len(common) / len(clean_banco)
+                # Containment inverso
+                contain_e = len(common) / len(clean_erp) if clean_erp else 0
+                # Jaccard
+                jaccard   = len(common) / len(clean_banco | clean_erp)
+                text_score = max(jaccard, contain_b * 0.9, contain_e * 0.9)
+            else:
+                text_score = _score(favor_banco, desc_erp)
+
+            # Threshold mais baixo (0.4) — captura "PASSAGEM MICHELL" vs "MICHELL DE MELO FERREIRA"
+            if text_score >= 0.4:
                 return True, text_score, "nome similar"
 
-            # 2. Busca na base de entidades pelo favorecido do banco
+            # 2. CPF/CNPJ do banco aparece na descrição do ERP
+            doc = _doc_clean(doc_banco)
+            if doc and len(doc) >= 8 and doc in _doc_clean(desc_erp):
+                return True, 0.95, "CPF/CNPJ coincide"
+
+            # 3. Busca na base de entidades
             ent_banco = _get_entity_info(doc=doc_banco, nome=favor_banco)
             if not ent_banco:
-                # Sem base de entidades — usa só o texto
-                # Threshold mais rigoroso para não ter base
-                return text_score >= 0.3, text_score, "sem base (threshold baixo)"
+                # Sem base — threshold conservador
+                return text_score >= 0.25, max(text_score, 0.25), "sem base"
 
-            # 3. Busca a entidade mencionada na descrição do ERP
-            # Extrai palavras-chave do ERP (nome próprio = 2+ tokens capitalizados)
+            # Extrai nome próprio da descrição ERP (ignora stop words)
             import re as _re
-            words = _re.findall(r'[A-ZÁÉÍÓÚÂÊÎÔÛÃÕÇ]{2,}', str(desc_erp).upper())
+            words_erp = [w for w in _re.findall(
+                r'[A-ZÁÉÍÓÚÂÊÎÔÛÃÕÇ]{3,}', str(desc_erp).upper())
+                if w not in STOP_WORDS and len(w) >= 4]
+
             ent_erp = None
-            for word in words:
-                if len(word) >= 4:
-                    ent_erp = _get_entity_info(nome=word)
+            for word in words_erp:
+                ent_erp = _get_entity_info(nome=word)
+                if ent_erp:
+                    break
+                if words_erp.index(word) + 1 < len(words_erp):
+                    combo = f"{word} {words_erp[words_erp.index(word)+1]}"
+                    ent_erp = _get_entity_info(nome=combo)
                     if ent_erp:
                         break
-                    # Tenta combinações de 2 palavras consecutivas
-                    idx = words.index(word)
-                    if idx + 1 < len(words):
-                        combo = f"{word} {words[idx+1]}"
-                        ent_erp = _get_entity_info(nome=combo)
-                        if ent_erp:
-                            break
 
             if ent_erp is None:
-                # ERP não identificado na base — usa só texto
-                return text_score >= 0.3, text_score, "ERP não na base"
+                return text_score >= 0.25, max(text_score, 0.3), "ERP não na base"
 
-            # 4. Compara cargo/categoria das duas entidades
+            # 4. Compara cargo/categoria
             cargo_banco = str(ent_banco.get("cargo_ocupacao") or "").upper()
             cargo_erp   = str(ent_erp.get("cargo_ocupacao")   or "").upper()
             nome_banco  = str(ent_banco.get("razao_social")    or "").upper()
             nome_erp    = str(ent_erp.get("razao_social")      or "").upper()
 
-            # Mesma pessoa?
             if nome_banco and nome_erp and nome_banco == nome_erp:
                 return True, 0.95, "mesma pessoa (base)"
 
-            # Mesmo cargo/categoria — podem ser da mesma equipe, mas não a mesma pessoa
-            # Não é suficiente — exige confirmação textual também
             if cargo_banco and cargo_erp and cargo_banco == cargo_erp:
-                # Mesmo cargo + alguma similaridade textual
                 if text_score >= 0.2:
                     return True, 0.6, f"mesmo cargo ({cargo_banco})"
                 else:
-                    return False, 0.2, f"mesmo cargo mas pessoas diferentes ({nome_banco} ≠ {nome_erp})"
+                    return False, 0.2, f"mesmo cargo mas pessoas diferentes"
 
-            # Cargos diferentes — pessoas claramente distintas
             return False, 0.05, f"pessoas distintas: {cargo_banco} ≠ {cargo_erp}"
 
         def _find_suggestions(val_banco, favor_banco, desc_banco, data_banco,
