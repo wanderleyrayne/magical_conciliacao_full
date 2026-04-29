@@ -36,8 +36,7 @@ from version import APP_VERSION, APP_NAME, GITHUB_REPO
 # Token GitHub para repositório privado
 # Cole seu token aqui: ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 # Gere em: github.com → Settings → Developer settings → Personal access tokens → Tokens (classic)
-GITHUB_TOKEN = "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" 
-#GITHUB_TOKEN = "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" # ← coloque seu token aqui
+GITHUB_TOKEN = "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"  # ← coloque seu token aqui
 
 # Nome do asset no release do GitHub
 ASSET_NAME = "Magical_Conciliacao.exe"
@@ -75,11 +74,13 @@ def _get_latest_release() -> dict | None:
         version = tag.lstrip("vV")
         body    = data.get("body", "")   # notas da versão
 
-        # Busca o asset .exe
+        # Busca o asset .exe — usa URL da API (funciona em repos privados)
         asset_url = None
         for asset in data.get("assets", []):
             if asset.get("name") == ASSET_NAME:
-                asset_url = asset.get("browser_download_url")
+                # asset["url"] = API endpoint — suporta autenticação
+                # asset["browser_download_url"] = link direto — falha em repos privados
+                asset_url = asset.get("url")
                 break
 
         return {
@@ -112,13 +113,16 @@ def _download_and_replace(asset_url: str, progress_cb=None) -> bool:
     """
     try:
         import requests as _req
-        headers = {"Accept": "application/octet-stream"}
+        headers = {
+            "Accept":               "application/octet-stream",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
         if GITHUB_TOKEN:
             headers["Authorization"] = f"Bearer {GITHUB_TOKEN}"
 
         resp = _req.get(asset_url, headers=headers,
-                        stream=True, timeout=60)
-        if resp.status_code != 200:
+                        stream=True, timeout=120, allow_redirects=True)
+        if resp.status_code not in (200, 302):
             return False
 
         total = int(resp.headers.get("content-length", 0))
