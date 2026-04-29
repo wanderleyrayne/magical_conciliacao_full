@@ -525,10 +525,10 @@ class MainWindow:
             aviso("A conciliação foi executada, mas nenhum resultado foi gerado.")
             return
 
-        ResultsWindow(self.root, df_final)
+        ResultsWindow(self.root, df_final, self.repo)
 
-        if partner_receipts_summary:
-            PartnerReceiptsDialog(self.root, partner_receipts_summary)
+        # Resumo de parceiros removido da abertura automática
+        # Agora acessível pelo botão "Resumo parceiros" na tela de resultado
 
     def _on_reconciliation_error(self, msg):
         erro(msg)

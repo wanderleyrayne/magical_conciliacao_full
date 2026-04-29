@@ -259,6 +259,19 @@ class ErpLancamentoWindow:
 
         ttk.Button(footer, text="Fechar", command=self.top.destroy).pack(side="right")
 
+        ttk.Separator(footer, orient="vertical").pack(side="right", fill="y", padx=8)
+
+        def _open_history():
+            try:
+                from ui.erp_history_window import ErpHistoryWindow
+                ErpHistoryWindow(self.top, self.repo)
+            except Exception as exc:
+                from tkinter import messagebox
+                messagebox.showerror("Erro", str(exc), parent=self.top)
+
+        ttk.Button(footer, text="📋 Histórico",
+                   command=_open_history).pack(side="right")
+
         self.progress = ttk.Progressbar(footer, orient="horizontal", length=200, mode="determinate")
         self.progress.pack(side="left", padx=(0, 10))
 
