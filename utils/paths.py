@@ -1,4 +1,5 @@
 import sys
+import os
 from pathlib import Path
 
 
@@ -13,7 +14,23 @@ def app_path(*parts) -> Path:
 
 
 def user_data_path(*parts) -> Path:
-    base = Path.cwd()
+    """
+    Retorna o caminho para dados do usuário.
+
+    - Quando rodando como .exe (frozen): usa %APPDATA%\Magical_Conciliacao\
+      Isso garante que o banco NÃO fica dentro da pasta dist/ e não é
+      apagado quando o build.bat gera um novo executável.
+
+    - Quando rodando como script Python (desenvolvimento): usa a pasta do projeto.
+    """
+    if getattr(sys, "frozen", False):
+        # Executável — salva em %APPDATA%\Magical_Conciliacao\
+        appdata = Path(os.environ.get("APPDATA", Path.home()))
+        base = appdata / "Magical_Conciliacao"
+    else:
+        # Desenvolvimento — salva na pasta do projeto
+        base = Path(__file__).resolve().parent.parent
+
     path = base.joinpath(*parts)
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
