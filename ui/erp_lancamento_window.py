@@ -51,28 +51,144 @@ FORMA_PGTO_DEFAULT = 1   # usado quando a forma não está no mapa acima
 # Preencha com os IDs do seu cadastro em Configurações → Categorias no MeEventos
 # Deixe None para categorias que devem usar o valor padrão abaixo
 CATEGORIA_MAP = {
-    "Decoração":                    None,   # preencher com ID real
-    "Decorador":                    None,
-    "Bolo":                         None,
-    "Doce":                         None,
-    "Bebidas":                      None,
-    "Buffet":                       None,
-    "Som & Imagem":                 None,
-    "Brigadista":                   None,
-    "Recepcionista":                None,
-    "Manobrista":                   None,
-    "Eletricista":                  None,
-    "Gerente de Evento":            None,
-    "Mão de Obra Especializada":    None,
-    "Prestação de Serviços - T":    None,
-    "Despesa com Alimentação":      None,
-    "Produtos Alimentícios - Outros": None,
-    "Manutenção & Conservação":     None,
-    "Telefonia & Internet":         None,
-    "Móveis & Utensílios":          None,
-    "Alarmes":                      None,
+    # ── Custo de Mão de Obra ──────────────────────────────────────────
+    "Brigadista":                    "16599",
+    "Cerimonialista":                "16799",
+    "Chef":                          "15699",
+    "Decorador":                     "15599",
+    "Eletricista":                   "16699",
+    "Gerente de Evento":             "15999",
+    "Mão de Obra Especializada":     "16999",
+    "Recepcionista":                 "15799",
+    "Segurança e Manobrista":        "16899",
+    "Manobrista":                    "16899",
+
+    # ── Custo Produtos Alimentícios ───────────────────────────────────
+    "Bar":                           "17699",
+    "Bebidas":                       "17099",
+    "Bolo":                          "17199",
+    "Buffet":                        "17299",
+    "Doce":                          "17399",
+    "Produtos Alimentícios - Outros":"17499",
+    "Degustação":                    "17599",
+
+    # ── Serviços Terceiros ────────────────────────────────────────────
+    "Decoração":                     "17899",
+    "Limpeza":                       "18299",
+
+    # ── Som & Imagem / Iluminação ─────────────────────────────────────
+    "Som & Imagem":                  "18099",
+    "Iluminação":                    "18199",
+
+    # ── Custo Logística & Transporte ──────────────────────────────────
+    "Combustível":                   "14099",
+    "Frete":                         "17799",
+    "Translado":                     "15299",
+    "Transporte Cargas":             "2082717",
+
+    # ── Custo de Materiais & Mobiliários ─────────────────────────────
+    "Aluguel Mobiliário":            "17999",
+
+    # ── Despesas Prestadores ──────────────────────────────────────────
+    "Prestação de Serviços":         "2082704",
+    "Prestação de Serviços - T":     "15499",
+    "Prestação de Serviços - A":     "15399",
+    "Prestação de Serviços - CB":    "21299",
+    "Repasse":                       "14199",
+    "Repasse - P":                   "2082708",
+    "Repasse - SG":                  "21199",
+    "Salário":                       "2082716",
+    "Remuneração - Vendedores":      "20899",
+    "Remuneração - Planejadoras":    "20999",
+    "Remuneração - SDR":             "21099",
+    "Férias":                        "21499",
+    "Rescisões Trabalhistas":        "15099",
+    "Pró-Labore Sócios":             "20699",
+
+    # ── Despesas Gerais ───────────────────────────────────────────────
+    "Assistência Contábil & BPO":    "14299",
+    "Assistência Jurídica":          "19599",
+    "Cartório":                      "13999",
+    "Copa & Cozinha":                "19699",
+    "Estornos - Lançamentos Indevidos": "2082706",
+    "Instalações Comerciais":        "19999",
+    "Locação de Equipamentos":       "19799",
+    "Manutenção & Conservação":      "14799",
+    "Material de Escritório":        "20099",
+    "Materiais de Limpeza & Higiene":"14699",
+    "Móveis & Utensílios":           "19899",
+    "Obras & Reformas":              "19499",
+    "Passagem aéreas":               "14899",
+    "Serviços Gerais":               "20599",
+    "Tecnologia da Informação":      "20199",
+    "Telefonia & Internet":          "20299",
+
+    # ── Despesas Marketing & Publicidade ─────────────────────────────
+    "Elaboração Conteúdo":           "14999",
+    "Estrutura de Marketing":        "16299",
+    "Marketing & Publicidade":       "2082699",
+    "Tráfego Pago":                  "2081799",
+
+    # ── Despesas Ocupacional ──────────────────────────────────────────
+    "Água e esgoto":                 "13599",
+    "Alarmes":                       "19399",
+    "Aluguel":                       "13699",
+    "Aquisição de Equipamentos":     "13799",
+    "Condomínio":                    "18699",
+    "Energia Elétrica":              "18999",
+    "Gás":                           "19099",
+    "Gerador":                       "19199",
+    "IPTU":                          "2080799",
+    "Seguros":                       "19299",
+    "Taxas":                         "18899",
+
+    # ── Impostos ─────────────────────────────────────────────────────
+    "COFINS":                        "2082720",
+    "CSLL":                          "2080699",
+    "CSLL & IRPJ":                   "2082718",
+    "FGTS":                          "2080299",
+    "ICMS":                          "2080399",
+    "IMPOSTO":                       "2081399",
+    "INSS":                          "2080499",
+    "IOF":                           "15899",
+    "IRPJ":                          "2082723",
+    "ISS":                           "2081199",
+    "PIS":                           "2082724",
+    "PIS & COFINS":                  "2082719",
+    "SIMPLES NACIONAL":              "2082721",
+
+    # ── Tarifas Bancárias ─────────────────────────────────────────────
+    "Tarifa Boleto":                 "18499",
+    "Tarifa Cartão Crédito":         "2082499",
+    "Tarifa Cartão Débito":          "2082399",
+    "Tarifa PIX":                    "18599",
+    "Tarifas Bancárias":             "15199",
+
+    # ── Outras ────────────────────────────────────────────────────────
+    "Antecipação - Degustação":      "2082712",
+    "Antecipações & Retiradas Sócios":"20499",
+    "Arrendamento":                  "13899",
+    "Comissão Magical":              "2081499",
+    "Despesas com Sócios":           "20399",
+    "Devoluções de Vendas":          "13499",
+    "Empréstimos":                   "14399",
+    "Investimentos":                 "14499",
+    "Juros":                         "14599",
+    "Participação Sócios":           "2082599",
+
+    # ── Receitas ─────────────────────────────────────────────────────
+    "Receita - Sinal":               "13099",
+    "Receita - Recorrentes":         "13199",
+    "Receita - Integralização":      "13399",
+    "Receita - Aplicações":          "13299",
+    "Receita - Financeiras":         "16099",
+    "Receita - Quitação":            "16099",
+    "Receita - Serviços":            "2081599",
+    "Receita - Opcional Pós Venda":  "2082709",
+    "Estrutura de Marketing (R)":    "2082299",
+    "Crédito Indevido":              "2082707",
 }
-CATEGORIA_DEFAULT = 1    # ID usado quando categoria não está no mapa
+CATEGORIA_DEFAULT = "2082704"   # Prestação de Serviços — fallback genérico
 
 
 class ErpLancamentoWindow:
@@ -93,6 +209,7 @@ class ErpLancamentoWindow:
     COL_TIPO          = "TIPO DESPESA\nMeEventos"
     COL_ID_EVENTO     = "ID\nMeEventos"
     COL_CATEGORIA     = "CATEGORIA\nMeEventos"
+    COL_CATEGORIA_ALT = "CATEGORIA MeEventos"
     COL_DETALHE       = "DETALHE PAGAMENTO"
     COL_VALOR         = "VALOR"
     COL_FORNECEDOR    = "FORNECEDOR"
@@ -122,6 +239,7 @@ class ErpLancamentoWindow:
         self.df_raw      = None
         self.df_preview  = None
         self.file_path   = None
+        self._categoria_map_local = {}   # categorias dinâmicas do parceiro atual
 
         self._build_layout()
         self._load_api_settings()
@@ -184,7 +302,7 @@ class ErpLancamentoWindow:
         self.file_label.pack(side="left", fill="x", expand=True)
 
         ttk.Button(file_frame, text="Selecionar planilha", command=self._select_file).pack(side="left", padx=6)
-        ttk.Button(file_frame, text="↺ Revalidar", command=self._load_and_validate).pack(side="left")
+        ttk.Button(file_frame, text="↺ Revalidar", command=self._revalidate).pack(side="left")
 
         # ── Filtros de preview ────────────────────────────────────────────────
         filter_frame = tk.Frame(self.top)
@@ -288,7 +406,7 @@ class ErpLancamentoWindow:
     # =========================================================================
 
     def _on_partner_selected(self, event=None):
-        """Carrega URL e token do parceiro selecionado a partir das Configurações."""
+        """Carrega URL e token do parceiro selecionado e busca categorias da API."""
         name = self.partner_var.get()
         if not name:
             return
@@ -301,6 +419,10 @@ class ErpLancamentoWindow:
         if url and token:
             self.api_status_label.config(
                 text=f"API configurada ✓  ({url})", fg="#166534")
+            # Carrega categorias em background
+            import threading as _t
+            _t.Thread(target=self._load_categories,
+                      args=(url, token, safe), daemon=True).start()
         elif url:
             self.api_status_label.config(
                 text="URL carregada, mas token não configurado.", fg="#92400e")
@@ -308,6 +430,68 @@ class ErpLancamentoWindow:
             self.api_status_label.config(
                 text="Parceiro sem configuração de API. Acesse Configurações → API MeEventos.",
                 fg="#b91c1c")
+
+    def _load_categories(self, url_base: str, token: str, safe_name: str):
+        """
+        Busca categorias da API do MeEventos para o parceiro atual.
+        Cache de 7 dias no banco — silencioso, sem feedback na UI.
+        """
+        import json as _json
+        from datetime import datetime, timedelta
+
+        cache_key    = f"erp_categories_{safe_name}"
+        cache_ts_key = f"erp_categories_ts_{safe_name}"
+
+        # Verifica cache — usa se tiver menos de 7 dias
+        try:
+            cached    = self.repo.get_setting(cache_key)
+            cached_ts = self.repo.get_setting(cache_ts_key)
+            if cached and cached_ts:
+                ts = datetime.fromisoformat(cached_ts)
+                if datetime.now() - ts < timedelta(days=7):
+                    self._categoria_map_local = _json.loads(cached)
+                    return  # cache válido — não chama a API
+        except Exception:
+            pass
+
+        # Cache expirado ou inexistente — busca da API
+        try:
+            import requests as _req
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type":  "application/json",
+                "Accept":        "application/json",
+            }
+            categoria_map = {}
+
+            for tipo in ("despesas", "receitas"):
+                page = 1
+                while True:
+                    resp = _req.get(
+                        f"{url_base.rstrip('/')}/api/v1/financial-categories",
+                        params={"tipo": tipo, "page": page, "page_size": 100},
+                        headers=headers, timeout=10
+                    )
+                    if resp.status_code != 200:
+                        break
+                    data = resp.json()
+                    for cat in data.get("data", []):
+                        nome = str(cat.get("nome") or "").strip()
+                        cid  = str(cat.get("id")   or "").strip()
+                        if nome and cid:
+                            categoria_map[nome] = cid
+                    pagination = data.get("pagination", {})
+                    if page >= pagination.get("total_page", 1):
+                        break
+                    page += 1
+
+            if categoria_map:
+                self._categoria_map_local = categoria_map
+                self.repo.save_setting(cache_key, _json.dumps(categoria_map))
+                self.repo.save_setting(cache_ts_key, datetime.now().isoformat())
+
+        except Exception:
+            pass  # falha silenciosa — usa mapa estático como fallback
 
     def _load_api_settings(self):
         """Restaura o último parceiro selecionado."""
@@ -326,6 +510,112 @@ class ErpLancamentoWindow:
             self.repo.save_setting("erp_last_partner", self.partner_var.get())
         except Exception:
             pass
+
+    def _parse_date_str(self, text: str) -> str | None:
+        """
+        Tenta converter texto para data no formato YYYY-MM-DD.
+        Aceita: 23/04/2026, 2026-04-23, 23-04-2026, 2304/2026, 2304/26.
+        Retorna None se não conseguir parsear.
+        """
+        import re as _re
+        text = text.strip()
+
+        # DD/MM/YYYY
+        m = _re.match(r'^(\d{1,2})/(\d{1,2})/(\d{4})$', text)
+        if m:
+            return f"{m.group(3)}-{m.group(2).zfill(2)}-{m.group(1).zfill(2)}"
+
+        # YYYY-MM-DD
+        m = _re.match(r'^(\d{4})-(\d{2})-(\d{2})$', text)
+        if m:
+            return text
+
+        # DD-MM-YYYY
+        m = _re.match(r'^(\d{1,2})-(\d{1,2})-(\d{4})$', text)
+        if m:
+            return f"{m.group(3)}-{m.group(2).zfill(2)}-{m.group(1).zfill(2)}"
+
+        # DDMM/YYYY — ex: "2304/2026" (Excel remove o zero do dia)
+        m = _re.match(r'^(\d{2})(\d{2})/(\d{4})$', text)
+        if m:
+            return f"{m.group(3)}-{m.group(2)}-{m.group(1)}"
+
+        # DDMM/YY — ex: "2304/26"
+        m = _re.match(r'^(\d{2})(\d{2})/(\d{2})$', text)
+        if m:
+            return f"20{m.group(3)}-{m.group(2)}-{m.group(1)}"
+
+        # Tenta pandas como último recurso
+        try:
+            import pandas as _pd
+            dt = _pd.to_datetime(text, dayfirst=True, errors="coerce")
+            if not _pd.isna(dt):
+                return dt.strftime("%Y-%m-%d")
+        except Exception:
+            pass
+
+        return None
+
+    def _resolve_event_by_date(self, data_fmt: str,
+                                avisos: list) -> tuple:
+        """
+        Busca o ID do evento pela data via API do MeEventos.
+        Usa cache em memória para evitar chamadas repetidas.
+        Retorna (id_evento, id_evento_display) ou (None, "").
+        """
+        if not hasattr(self, "_event_date_cache"):
+            self._event_date_cache = {}
+
+        if data_fmt in self._event_date_cache:
+            cached = self._event_date_cache[data_fmt]
+            if cached:
+                return cached, f"{cached} ({data_fmt})"
+            return None, ""
+
+        url_base = getattr(self, "_current_url", "").rstrip("/")
+        token    = getattr(self, "_current_token", "")
+
+        if not url_base or not token:
+            self._event_date_cache[data_fmt] = None
+            return None, ""
+
+        try:
+            import requests as _req
+            resp = _req.get(
+                f"{url_base}/api/v1/events",
+                params={"start": data_fmt, "end": data_fmt},
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/json",
+                },
+                timeout=8,
+            )
+            if resp.status_code == 200:
+                data = resp.json().get("data", [])
+                if data:
+                    evento_id = str(data[0].get("id", ""))
+                    nome      = str(data[0].get("nomeevento", "")).strip()[:40]
+                    if len(data) > 1:
+                        avisos.append(
+                            f"{len(data)} eventos em {data_fmt} — vinculado ao primeiro: {nome}")
+                    self._event_date_cache[data_fmt] = evento_id
+                    return evento_id, f"{evento_id} ({nome})"
+                else:
+                    self._event_date_cache[data_fmt] = None
+                    return None, ""
+            else:
+                self._event_date_cache[data_fmt] = None
+                return None, ""
+        except Exception:
+            pass
+
+        self._event_date_cache[data_fmt] = None
+        return None, ""
+
+    def _revalidate(self):
+        """Limpa cache de eventos e revalida a planilha com o parceiro atual."""
+        self._event_date_cache = {}
+        self._load_and_validate()
 
     def _on_close(self):
         """Salva estado e fecha a janela."""
@@ -496,6 +786,10 @@ class ErpLancamentoWindow:
             data = df_raw.iloc[header_row_idx + 1:].reset_index(drop=True)
             data.columns = headers
 
+            # Normaliza coluna CATEGORIA — aceita com ou sem quebra de linha
+            if self.COL_CATEGORIA not in data.columns and self.COL_CATEGORIA_ALT in data.columns:
+                data = data.rename(columns={self.COL_CATEGORIA_ALT: self.COL_CATEGORIA})
+
             # Seleciona apenas as colunas relevantes que existem
             keep = [
                 self.COL_DATA, self.COL_TIPO, self.COL_ID_EVENTO,
@@ -625,22 +919,40 @@ class ErpLancamentoWindow:
         id_evento_display = ""
 
         if isinstance(id_evento_raw, (int, float)) and not np.isnan(float(id_evento_raw)):
+            # Número direto → usa como ID
             id_evento = int(id_evento_raw)
             id_evento_display = str(id_evento)
         elif isinstance(id_evento_raw, datetime):
-            # Excel armazena o ID como serial numérico (ex: 46132 = 20/04/2026)
-            # pandas converte para datetime — revertemos para o serial original
-            from datetime import date as _date
-            id_evento = (id_evento_raw.date() - _date(1899, 12, 30)).days
-            id_evento_display = str(id_evento)
+            # Excel pode converter data para datetime — tenta buscar evento por data
+            data_evento = id_evento_raw.strftime("%Y-%m-%d")
+            id_evento, id_evento_display = self._resolve_event_by_date(data_evento, avisos)
+            if not id_evento:
+                id_evento_display = id_evento_raw.strftime("%d/%m/%Y")
+                avisos.append(f"Data '{id_evento_display}' — nenhum evento encontrado")
+                status = max(status, self.STATUS_ATENCAO, key=self._status_weight)
         elif str(id_evento_raw or "").strip().lower() in ("sem id", "preencher id", "nan", ""):
             id_evento_display = "Sem ID"
             avisos.append("Sem ID de evento — lançará sem vínculo com evento")
             status = max(status, self.STATUS_ATENCAO, key=self._status_weight)
         else:
-            id_evento_display = str(id_evento_raw)
-            avisos.append(f"ID pendente: '{id_evento_raw}' — lançará sem vínculo")
-            status = max(status, self.STATUS_ATENCAO, key=self._status_weight)
+            # Pode ser uma data no formato texto (ex: "23/04/2026")
+            raw_str = str(id_evento_raw).strip()
+            data_fmt = self._parse_date_str(raw_str)
+            if data_fmt:
+                id_evento, id_evento_display = self._resolve_event_by_date(data_fmt, avisos)
+                if not id_evento:
+                    id_evento_display = raw_str
+                    avisos.append(f"Data '{raw_str}' — nenhum evento encontrado")
+                    status = max(status, self.STATUS_ATENCAO, key=self._status_weight)
+            else:
+                # Tenta usar como ID diretamente
+                try:
+                    id_evento = int(float(raw_str))
+                    id_evento_display = str(id_evento)
+                except Exception:
+                    id_evento_display = raw_str
+                    avisos.append(f"ID pendente: '{raw_str}' — lançará sem vínculo")
+                    status = max(status, self.STATUS_ATENCAO, key=self._status_weight)
 
         # ── VALOR ─────────────────────────────────────────────────────────────
         try:
@@ -668,8 +980,18 @@ class ErpLancamentoWindow:
             descricao = " | ".join(parts) if parts else tipo_raw
 
         # ── CATEGORIA → idcategoria ────────────────────────────────────────────
-        categoria_raw = str(row.get(self.COL_CATEGORIA, "") or "").strip()
-        id_categoria  = CATEGORIA_MAP.get(categoria_raw)
+        # Aceita dois formatos de cabeçalho: "CATEGORIA\nMeEventos" ou "CATEGORIA MeEventos"
+        categoria_raw = str(
+            row.get(self.COL_CATEGORIA) or
+            row.get(self.COL_CATEGORIA_ALT) or ""
+        ).strip()
+
+        # 1. Mapa dinâmico do parceiro (buscado da API) — tem prioridade
+        # 2. Mapa estático hardcoded (fallback)
+        id_categoria = (
+            self._categoria_map_local.get(categoria_raw) or
+            CATEGORIA_MAP.get(categoria_raw)
+        )
 
         if id_categoria is None:
             id_categoria = CATEGORIA_DEFAULT

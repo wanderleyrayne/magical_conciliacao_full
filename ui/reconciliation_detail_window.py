@@ -2960,6 +2960,55 @@ class ReconciliationDetailWindow:
         btn_lancar.pack(side="right", padx=(6, 0))
         ttk.Button(btn_f, text="Fechar", command=win.destroy).pack(side="right")
 
+    # Mapeamento cargo → idcategoria para lançamento automático
+    CARGO_CATEGORIA_MAP = {
+        'MAGICAL DIRETOR':             '20499',   # Antecipações & Retiradas Sócios
+        'MAGICAL RH':                  '2082716', # Salário
+        'MAGICAL ADM FINANCEIRO':      '2082704', # Prestação de Serviços
+        'MAGICAL MARKETING':           '2082704', # Prestação de Serviços
+        'REPASSE VENDEDOR':            '21199',   # Repasse - SG
+        'REPASSE GERENTE':             '21199',   # Repasse - SG
+        'REPASSE GERENTE OPERACIONAL': '21199',   # Repasse - SG
+        'REPASSE PLANEJADOR':          '20999',   # Remuneração - Planejadoras
+        'REPASSE SDR':                 '21099',   # Remuneração - SDR
+        'PARCEIRO CASA':               '14399',   # Empréstimos
+    }
+    CATEGORIA_DEFAULT_LANCAR = '2082704'  # Prestação de Serviços — fallback
+
+    def _get_categoria_by_doc(self, documento: str) -> tuple:
+        """
+        Busca categoria automática pelo CPF/CNPJ do documento banco.
+        Consulta entities_master → cargo_ocupacao → idcategoria.
+        Retorna (idcategoria, cargo, razao_social) ou ('', '', '') se não encontrar.
+        """
+        import re as _re, sqlite3
+        doc_clean = _re.sub(r'\D', '', str(documento or ''))
+        if not doc_clean or len(doc_clean) < 8:
+            return '', '', ''
+
+        try:
+            db_path = str(self.repo.db.db_path)
+            with sqlite3.connect(db_path) as conn:
+                cursor = conn.execute(
+                    """SELECT razao_social, cargo_ocupacao
+                       FROM entities_master
+                       WHERE REPLACE(REPLACE(REPLACE(REPLACE(
+                           documento,'.',''),'-',''),'/',''),' ','') = ?
+                       LIMIT 1""",
+                    (doc_clean,)
+                )
+                row = cursor.fetchone()
+            if row:
+                razao  = str(row[0] or '')
+                cargo  = str(row[1] or '').strip().upper()
+                cat_id = self.CARGO_CATEGORIA_MAP.get(cargo, '')
+                return cat_id, cargo, razao
+
+        except Exception:
+            pass
+
+        return '', '', ''
+
     def _lancar_api_worker(self, rows, url_base, token, tipocobranca,
                             partner_name, dry_run, win, status_lbl, btn_lancar):
         """Thread de lançamento via API — cria lançamentos no MeEventos."""
@@ -2996,13 +3045,21 @@ class ReconciliationDetailWindow:
                 p for p in desc_parts if p and p != "nan"
             ) or "Lançamento via Magical Conciliação"
 
+            # Identifica categoria automaticamente pelo CPF/CNPJ
+            doc_banco   = str(row.get("documento_banco") or "")
+            id_categoria, cargo, razao = self._get_categoria_by_doc(doc_banco)
+
             payload = {
                 "datapagamento": data_fmt,
                 "valor":         round(valor, 2),
-                "pago":          "sim",   # já saiu do banco
+                "pago":          "sim",
                 "tipocobranca":  tipocobranca,
                 "descricao":     descricao[:200],
             }
+
+            # Inclui idcategoria somente se identificado — senão vinculação manual no MeEventos
+            if id_categoria:
+                payload["idcategoria"] = id_categoria
 
             if dry_run:
                 api_status = "SIMULADO"
