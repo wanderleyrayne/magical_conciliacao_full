@@ -952,6 +952,38 @@ class SystemRepository:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def load_manual_memory(self) -> list:
+        """
+        Carrega todos os registros conciliados manualmente em execuções anteriores.
+        Retorna lista de dicts com chaves de identificação para reaplicar na próxima execução.
+
+        Chave de identificação:
+          - Banco: (data_banco, valor_banco, documento_banco, descricao_banco)
+          - ERP:   (data_erp, valor_erp, descricao_erp)
+        """
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT
+                    rr.data_banco, rr.valor_banco, rr.documento_banco,
+                    rr.descricao_banco, rr.data_erp, rr.valor_erp,
+                    rr.descricao_erp, rr.manual_note, rr.tipo_conciliacao,
+                    rr.favorecido_banco
+                FROM reconciliation_results rr
+                WHERE rr.manual_flag = 1
+                  AND rr.status = 'CONCILIADO'
+                ORDER BY rr.updated_at DESC
+                """
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def count_manual_memory(self) -> int:
+        """Retorna quantos registros manuais estão salvos na memória."""
+        with self.db.connect() as conn:
+            return conn.execute(
+                "SELECT COUNT(DISTINCT id) FROM reconciliation_results WHERE manual_flag=1 AND status='CONCILIADO'"
+            ).fetchone()[0]
+
     def save_match_feedback(self, result_id_banco: int, result_id_erp: int,
                              features_json: str, label: int,
                              confianca: float = 0.0):

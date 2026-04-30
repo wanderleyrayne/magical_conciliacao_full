@@ -115,6 +115,21 @@ class MainWindow:
         mode_box = tk.LabelFrame(uploads_container, text="Modo ERP", bg="#f8fafc", padx=10, pady=8)
         mode_box.pack(fill="x", pady=5)
 
+        # Seletor de parceiro/casa — isola a memória de conciliação por casa
+        from core.partner_rules import PARTNERS
+        partner_box = tk.LabelFrame(uploads_container, text="Parceiro / Casa",
+                                     bg="#f8fafc", padx=10, pady=8)
+        partner_box.pack(fill="x", pady=(0, 5))
+
+        self.partner_var = tk.StringVar(value="")
+        partner_names = [""] + sorted([p["partner_name"] for p in PARTNERS if p.get("partner_name")])
+        self.partner_combo = ttk.Combobox(
+            partner_box, textvariable=self.partner_var,
+            values=partner_names, state="readonly", width=28)
+        self.partner_combo.pack(anchor="w")
+        tk.Label(partner_box, text="Selecione a casa antes de executar a conciliação.",
+                 bg="#f8fafc", fg="#94a3b8", font=("Arial", 8)).pack(anchor="w")
+
         ttk.Radiobutton(
             mode_box,
             text="ERP consolidado",
@@ -460,6 +475,17 @@ class MainWindow:
         # Lê a tolerância de data configurada pelo usuário
         settings    = SettingsManager(str(self.repo.db.db_path))
         date_tolerance = settings.get_date_tolerance()
+        partner_name = self.partner_var.get().strip()
+
+        if not partner_name:
+            from tkinter import messagebox
+            if not messagebox.askyesno(
+                "Parceiro não selecionado",
+                "Nenhum parceiro selecionado.\n\n"
+                "A memória de conciliação não será isolada por casa.\n\n"
+                "Deseja continuar mesmo assim?"
+            ):
+                return
 
         self.progress["value"] = 0
         self.progress_text.config(text="Iniciando conciliação...")
@@ -469,12 +495,14 @@ class MainWindow:
         import threading
         thread = threading.Thread(
             target=self._run_reconciliation_worker,
-            args=(df_banco, df_despesas, df_receitas, df_entidades, date_tolerance),
+            args=(df_banco, df_despesas, df_receitas, df_entidades,
+                  date_tolerance, partner_name),
             daemon=True,
         )
         thread.start()
 
-    def _run_reconciliation_worker(self, df_banco, df_despesas, df_receitas, df_entidades, date_tolerance):
+    def _run_reconciliation_worker(self, df_banco, df_despesas, df_receitas,
+                                    df_entidades, date_tolerance, partner_name=""):
         try:
             df_result_desp = None
             df_result_rec  = None
@@ -494,6 +522,9 @@ class MainWindow:
             self._set_progress(85, "Consolidando resultados...")
             df_final = Reconciler.consolidar_resultados(df_result_desp, df_result_rec)
 
+            self._set_progress(90, "Aplicando conciliações anteriores...")
+            df_final = self._apply_manual_memory(df_final, partner_name)
+
             self._set_progress(92, "Salvando no banco...")
             partner_receipts_summary = RevenuePartnerMatcher.build_partner_receipts_summary(
                 df_banco=df_banco,
@@ -505,16 +536,178 @@ class MainWindow:
             self.repo.log(
                 "INFO",
                 "Conciliação executada",
-                f"run_id={run_id} | registros={len(df_final)} | tolerancia={date_tolerance}d"
+                f"run_id={run_id} | parceiro={partner_name or 'não informado'}"
+                f" | registros={len(df_final)} | tolerancia={date_tolerance}d"
             )
 
-            # Toda interação com a UI deve vir via root.after
             self.root.after(0, lambda: self._on_reconciliation_done(df_final, partner_receipts_summary))
 
         except Exception as exc:
             self.repo.log("ERROR", "Erro ao executar conciliação", str(exc))
             msg = f"Erro ao executar conciliação.\n\nDetalhes: {str(exc)}"
             self.root.after(0, lambda m=msg: self._on_reconciliation_error(m))
+
+    def _apply_manual_memory(self, df: "pd.DataFrame",
+                              partner_name: str = "") -> "pd.DataFrame":
+        """
+        Reaplica conciliações manuais de execuções anteriores com chave robusta.
+
+        BANCO — 3 níveis de chave (do mais ao menos específico):
+          Nível 1 (exato):    data + valor_centavos + documento_limpo + descricao_40
+          Nível 2 (forte):    data + valor_centavos + documento_limpo
+          Nível 3 (moderado): data + valor_centavos + favorecido_40
+
+        ERP — 2 níveis:
+          Nível 1 (exato):  data + valor_centavos + descricao_60
+          Nível 2 (forte):  data + valor_centavos + descricao_30
+
+        Valor em centavos (int) elimina problemas de float.
+        Data normalizada via pandas elimina variações de formato.
+        Documento limpo (só dígitos) elimina pontuação.
+        """
+        import pandas as pd
+        import re
+
+        try:
+            memoria = self.repo.load_manual_memory(partner_name=partner_name)
+        except Exception:
+            return df
+
+        if not memoria or df.empty:
+            return df
+
+        # ── Funções de normalização ───────────────────────────────────────────
+
+        def _val_cents(v) -> int | None:
+            """Converte valor para centavos inteiros — elimina imprecisão de float."""
+            try:
+                f = abs(float(str(v).replace(',', '.').strip()))
+                return int(round(f * 100))
+            except Exception:
+                return None
+
+        def _norm_date(v) -> str:
+            """Normaliza data para YYYY-MM-DD via pandas."""
+            try:
+                dt = pd.to_datetime(v, errors='coerce', dayfirst=True)
+                if pd.isna(dt):
+                    return ''
+                return dt.strftime('%Y-%m-%d')
+            except Exception:
+                return str(v or '')[:10]
+
+        def _norm_doc(v) -> str:
+            """Remove tudo que não é dígito do CPF/CNPJ."""
+            return re.sub(r'\D', '', str(v or ''))
+
+        def _norm_str(v, n: int) -> str:
+            """Normaliza string: upper, sem espaços duplos, truncada."""
+            s = re.sub(r'\s+', ' ', str(v or '').strip().upper())
+            return s[:n]
+
+        # ── Monta índices da memória ──────────────────────────────────────────
+
+        # Banco: (data, cents, doc, desc40) / (data, cents, doc) / (data, cents, fav40)
+        mem_banco_l1 = {}  # chave → nota
+        mem_banco_l2 = {}
+        mem_banco_l3 = {}
+
+        # ERP: (data, cents, desc60) / (data, cents, desc30)
+        mem_erp_l1 = {}
+        mem_erp_l2 = {}
+
+        for m in memoria:
+            nota = str(m.get('manual_note') or 'Conciliado em execução anterior')
+
+            # — Chaves BANCO —
+            d    = _norm_date(m.get('data_banco'))
+            c    = _val_cents(m.get('valor_banco'))
+            doc  = _norm_doc(m.get('documento_banco'))
+            desc = _norm_str(m.get('descricao_banco'), 40)
+            fav  = _norm_str(m.get('favorecido_banco'), 40)
+
+            if d and c and doc and desc:
+                mem_banco_l1[(d, c, doc, desc)] = nota
+            if d and c and doc:
+                mem_banco_l2[(d, c, doc)] = nota
+            if d and c and fav:
+                mem_banco_l3[(d, c, fav)] = nota
+
+            # — Chaves ERP —
+            d    = _norm_date(m.get('data_erp'))
+            c    = _val_cents(m.get('valor_erp'))
+            desc = _norm_str(m.get('descricao_erp'), 60)
+            desc30 = _norm_str(m.get('descricao_erp'), 30)
+
+            if d and c and desc:
+                mem_erp_l1[(d, c, desc)] = nota
+            if d and c and desc30:
+                mem_erp_l2[(d, c, desc30)] = nota
+
+        # ── Aplica memória ────────────────────────────────────────────────────
+
+        df = df.copy()
+        reaplicados = 0
+        conflitos   = 0
+
+        for idx, row in df.iterrows():
+            status = str(row.get('status', '')).upper()
+            if status not in ('SOMENTE_BANCO', 'SOMENTE_ERP'):
+                continue
+
+            nota_match = None
+            nivel_match = None
+
+            if status == 'SOMENTE_BANCO':
+                d    = _norm_date(row.get('data_banco'))
+                c    = _val_cents(row.get('valor_banco'))
+                doc  = _norm_doc(row.get('documento_banco'))
+                desc = _norm_str(row.get('descricao_banco'), 40)
+                fav  = _norm_str(row.get('favorecido_banco'), 40)
+
+                if not d or not c:
+                    continue  # sem data ou valor → não aplica
+
+                if (k := (d, c, doc, desc)) in mem_banco_l1:
+                    nota_match, nivel_match = mem_banco_l1[k], 1
+                elif doc and (k := (d, c, doc)) in mem_banco_l2:
+                    nota_match, nivel_match = mem_banco_l2[k], 2
+                elif fav and (k := (d, c, fav)) in mem_banco_l3:
+                    # Nível 3: exige documento também para evitar falso positivo
+                    # (favorecido pode ser genérico — ex: "PAGAMENTOS A FORNECEDORES")
+                    if len(fav) >= 8 and fav not in (
+                        'PAGAMENTOS A FORNECEDORES', 'PIX ENVIADO',
+                        'TED ENVIADO', 'TRANSFERENCIA'):
+                        nota_match, nivel_match = mem_banco_l3[k], 3
+
+            elif status == 'SOMENTE_ERP':
+                d    = _norm_date(row.get('data_erp'))
+                c    = _val_cents(row.get('valor_erp'))
+                desc = _norm_str(row.get('descricao_erp'), 60)
+                desc30 = _norm_str(row.get('descricao_erp'), 30)
+
+                if not d or not c:
+                    continue
+
+                if desc and (k := (d, c, desc)) in mem_erp_l1:
+                    nota_match, nivel_match = mem_erp_l1[k], 1
+                elif desc30 and (k := (d, c, desc30)) in mem_erp_l2:
+                    nota_match, nivel_match = mem_erp_l2[k], 2
+
+            if nota_match:
+                df.at[idx, 'status']      = 'CONCILIADO'
+                df.at[idx, 'manual_flag'] = 1
+                df.at[idx, 'manual_note'] = f'Reaplicado (nível {nivel_match}): {nota_match}'
+                reaplicados += 1
+
+        if reaplicados > 0:
+            self.repo.log(
+                "INFO",
+                "Memória de conciliação aplicada",
+                f"{reaplicados} registro(s) reaplicados | {conflitos} conflito(s) ignorados"
+            )
+
+        return df
 
     def _on_reconciliation_done(self, df_final, partner_receipts_summary):
         self.progress["value"] = 100

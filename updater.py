@@ -36,7 +36,7 @@ from version import APP_VERSION, APP_NAME, GITHUB_REPO
 # Token GitHub para repositório privado
 # Cole seu token aqui: ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 # Gere em: github.com → Settings → Developer settings → Personal access tokens → Tokens (classic)
-GITHUB_TOKEN = "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"  # ← coloque seu token aqui
+GITHUB_TOKEN = ""  # ← coloque seu token aqui
 
 # Nome do asset no release do GitHub
 ASSET_NAME = "Magical_Conciliacao.exe"
@@ -282,6 +282,13 @@ class UpdateDialog:
                 pre_update_backup()
             except Exception:
                 pass
+
+            try:
+                from logger import log as _log
+                from version import APP_VERSION
+                _log.atualizacao(APP_VERSION, self.release.get("version","?"), "iniciada")
+            except Exception:
+                pass
             def _prog(pct):
                 self.win.after(0, lambda: (
                     self.progress.config(value=pct),
@@ -293,11 +300,23 @@ class UpdateDialog:
 
             def _finish():
                 if ok:
+                    try:
+                        from logger import log as _log
+                        from version import APP_VERSION
+                        _log.atualizacao(APP_VERSION, self.release.get("version","?"), "concluída")
+                    except Exception:
+                        pass
                     self.progress_lbl.config(
                         text="Download concluído! Reiniciando...",
                         fg="#166534")
                     self.win.after(1500, _restart)
                 else:
+                    try:
+                        from logger import log as _log
+                        from version import APP_VERSION
+                        _log.atualizacao(APP_VERSION, self.release.get("version","?"), "FALHOU")
+                    except Exception:
+                        pass
                     messagebox.showerror(
                         "Erro no download",
                         "Não foi possível baixar a atualização.\n"
