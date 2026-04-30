@@ -1007,16 +1007,17 @@ class ErpLancamentoWindow:
             status = max(status, self.STATUS_ATENCAO, key=self._status_weight)
 
         # ── PAYLOAD — apenas os campos que o usuário preenche na tela do ERP ──
-        # Campos: Valor, Descrição, Categoria, Modo de Pagamento, Evento
         payload = {
             "datapagamento":   data_fmt,
             "valor":           round(valor, 2),
-            "pago":            "nao",        # padrão "Pendente" — igual à tela do ERP
+            "pago":            "nao",
             "tipocobranca":    tipocobranca,
             "descricao":       descricao[:200],
             "idcategoria":     id_categoria,
-            "mododepagamento": modo_pgto,
         }
+        # mododepagamento opcional — só inclui se mapeado explicitamente
+        if forma_raw in FORMA_PGTO_MAP:
+            payload["mododepagamento"] = modo_pgto
         if id_evento:
             payload["idevento"] = id_evento
 
@@ -1159,8 +1160,10 @@ class ErpLancamentoWindow:
         ).start()
 
     def _launch_worker(self, df_to_send, url_base, token, dry_run, partner_name, batch_id):
+        from logger import log as _log
         total   = len(df_to_send)
         results = []
+        file_name = Path(self.file_path).name if self.file_path else "desconhecido"
 
         for i, (_, row) in enumerate(df_to_send.iterrows()):
             payload = row["_payload"]
@@ -1175,6 +1178,16 @@ class ErpLancamentoWindow:
             else:
                 result = self._post_to_api(url_base, token, payload, idx)
 
+            # Log de cada item
+            _log.lancamento_item(
+                parceiro  = partner_name,
+                linha     = idx + 5,
+                status    = result["status"],
+                id_api    = result.get("id_api", ""),
+                payload   = payload if result["status"] == "ERRO_API" else None,
+                mensagem  = result.get("message", ""),
+            )
+
             # Grava item no banco para auditoria
             try:
                 self.repo.save_erp_launch_item(
@@ -1188,15 +1201,35 @@ class ErpLancamentoWindow:
                     categoria   = row.get("_categoria", ""),
                 )
             except Exception:
-                pass   # auditoria não deve interromper o lançamento
+                pass
 
             results.append(result)
             progress = int((i + 1) / total * 100)
             self.top.after(0, lambda p=progress, r=result, ri=row: self._on_row_launched(p, r, ri))
 
+        # Log de resumo do lote
+        ok   = sum(1 for r in results if r["status"] == "LANCADO")
+        erros= sum(1 for r in results if r["status"] == "ERRO_API")
+        sim  = sum(1 for r in results if r["status"] == "SIMULADO")
+        valor_total = sum(
+            abs(float(row["_payload"].get("valor") or 0))
+            for _, row in df_to_send.iterrows()
+            if row["_payload"].get("valor")
+        )
+        _log.lancamento(
+            parceiro    = partner_name,
+            planilha    = file_name,
+            caminho     = self.file_path or "",
+            ok          = ok if not dry_run else sim,
+            erros       = erros,
+            simulado    = dry_run,
+            valor_total = valor_total,
+        )
+
         self.top.after(0, lambda: self._on_launch_done(results, dry_run, batch_id))
 
     def _post_to_api(self, url_base, token, payload, idx) -> dict:
+        from logger import log as _log
         try:
             import requests as _requests
         except ImportError:
@@ -1215,6 +1248,13 @@ class ErpLancamentoWindow:
                 },
                 json=payload,
                 timeout=15,
+            )
+            _log.api(
+                endpoint = "POST /api/v1/financial",
+                status   = resp.status_code,
+                payload  = payload if resp.status_code not in (200, 201) else None,
+                resposta = resp.json() if resp.status_code not in (200, 201) else None,
+                parceiro = "",
             )
             if resp.status_code in (200, 201):
                 data = resp.json()
@@ -1240,6 +1280,7 @@ class ErpLancamentoWindow:
             return {"idx": idx, "status": "ERRO_API",
                     "message": "Tempo de resposta esgotado (timeout 15s). Tente novamente."}
         except Exception as exc:
+            _log.erro("Exceção em _post_to_api", exc=exc)
             return {"idx": idx, "status": "ERRO_API", "message": str(exc)[:120]}
 
     def _on_row_launched(self, progress, result, row_series):

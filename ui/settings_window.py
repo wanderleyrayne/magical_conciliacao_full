@@ -541,6 +541,17 @@ class SettingsWindow:
         ttk.Button(footer_inner, text="🔄 Verificar atualizações",
                    command=_check_updates).pack(side="left")
 
+        def _open_logs():
+            try:
+                from logger import log as _log
+                import subprocess
+                subprocess.Popen(f'explorer "{_log.log_dir()}"')
+            except Exception:
+                pass
+
+        ttk.Button(footer_inner, text="📋 Ver logs",
+                   command=_open_logs).pack(side="left", padx=(8, 0))
+
     # =========================
     # API MEEVENTOS
     # =========================

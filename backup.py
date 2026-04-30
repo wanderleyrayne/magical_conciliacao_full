@@ -86,6 +86,13 @@ def make_backup(label: str = "") -> Path | None:
             return None
 
     _rotate()
+
+    try:
+        from logger import log as _log
+        _log.backup(str(dest), status=f"criado ({label or 'auto'})")
+    except Exception:
+        pass
+
     return dest
 
 

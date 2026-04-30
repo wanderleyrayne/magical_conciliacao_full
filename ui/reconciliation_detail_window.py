@@ -48,9 +48,10 @@ class ReconciliationDetailWindow:
         "manual_note": 180,
     }
 
-    def __init__(self, master, run_id: int, db_path=None):
+    def __init__(self, master, run_id: int, db_path=None, partner_name: str = ""):
         self.top = tk.Toplevel(master)
         self.run_id = run_id
+        self.partner_name = partner_name
 
         if db_path is None:
             db_path = str(user_data_path("data", "conciliacao.db"))
@@ -2659,7 +2660,8 @@ class ReconciliationDetailWindow:
                         ok = self.repo.bulk_conciliar_manual(
                             ids_banco=ids_banco_desm,
                             ids_erp=ids_erp_desm,
-                            nota=nota)
+                            nota=nota,
+                            partner_name=self.partner_name)
                     except Exception as exc:
                         self.top.after(0, lambda: [
                             status_lbl.config(text=f"Erro: {exc}", fg="#b91c1c"),
