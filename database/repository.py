@@ -732,7 +732,7 @@ class SystemRepository:
         return updated
 
     def bulk_conciliar_manual(self, ids_banco: list, ids_erp: list,
-                               nota: str = "") -> int:
+                               nota: str = "", partner_name: str = "") -> int:
         """
         Conciliação manual que além de marcar CONCILIADO, preenche os valores
         cruzados e salva feedback para o match_model retreinar.
@@ -781,9 +781,10 @@ class SystemRepository:
                     conn.execute(
                         """UPDATE reconciliation_results
                            SET status='CONCILIADO', manual_flag=1, manual_note=?,
+                               attributed_partner=?,
                                valor_banco=?, updated_at=CURRENT_TIMESTAMP
                            WHERE id=?""",
-                        (nota_final,
+                        (nota_final, partner_name or None,
                          val_erp_num if val_erp_num > 0 else val_banco,
                          result_id)
                     )
@@ -792,9 +793,10 @@ class SystemRepository:
                     conn.execute(
                         """UPDATE reconciliation_results
                            SET status='CONCILIADO', manual_flag=1, manual_note=?,
+                               attributed_partner=?,
                                valor_erp=?, updated_at=CURRENT_TIMESTAMP
                            WHERE id=?""",
-                        (nota_final,
+                        (nota_final, partner_name or None,
                          soma_erp if soma_erp > 0 else val_banco_num,
                          result_id)
                     )
@@ -871,20 +873,51 @@ class SystemRepository:
         dry_run: bool,
     ) -> int:
         """Registra um lote de lançamento ERP e retorna o batch_id."""
+        from datetime import datetime
+        created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with self.db.connect() as conn:
             cursor = conn.execute(
                 """
                 INSERT INTO erp_launch_batches (
                     partner_name, file_name, file_path,
-                    total_rows, total_enviado, total_simulado, total_erro, dry_run
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    total_rows, total_enviado, total_simulado, total_erro,
+                    dry_run, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (partner_name, file_name, file_path,
                  total_rows, total_enviado, total_simulado, total_erro,
-                 1 if dry_run else 0)
+                 1 if dry_run else 0, created_at)
             )
             conn.commit()
             return cursor.lastrowid
+
+    def check_already_launched(self, partner_name: str, file_name: str,
+                                linha: int, descricao: str, valor: float,
+                                dry_run: bool = False) -> dict | None:
+        """
+        Verifica se um item já foi lançado anteriormente com sucesso.
+        Retorna dict com info do lançamento anterior ou None se não foi lançado.
+        Ignora lançamentos em modo simulação.
+        """
+        with self.db.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT i.id, i.status, i.id_api, b.created_at, b.id as batch_id
+                FROM erp_launch_items i
+                JOIN erp_launch_batches b ON i.batch_id = b.id
+                WHERE b.partner_name = ?
+                  AND b.file_name    = ?
+                  AND i.linha_excel  = ?
+                  AND i.status       = 'LANCADO'
+                  AND b.dry_run      = 0
+                ORDER BY b.created_at DESC
+                LIMIT 1
+                """,
+                (partner_name, file_name, linha)
+            ).fetchone()
+        if row:
+            return dict(row)
+        return None
 
     def save_erp_launch_item(
         self,
@@ -952,29 +985,47 @@ class SystemRepository:
             ).fetchall()
         return [dict(r) for r in rows]
 
-    def load_manual_memory(self) -> list:
+    def load_manual_memory(self, partner_name: str = "") -> list:
         """
-        Carrega todos os registros conciliados manualmente em execuções anteriores.
-        Retorna lista de dicts com chaves de identificação para reaplicar na próxima execução.
-
-        Chave de identificação:
-          - Banco: (data_banco, valor_banco, documento_banco, descricao_banco)
-          - ERP:   (data_erp, valor_erp, descricao_erp)
+        Carrega registros conciliados manualmente em execuções anteriores.
+        Se partner_name for informado, filtra pelo attributed_partner da casa.
+        Retorna lista de dicts com chaves de identificação.
         """
         with self.db.connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT DISTINCT
-                    rr.data_banco, rr.valor_banco, rr.documento_banco,
-                    rr.descricao_banco, rr.data_erp, rr.valor_erp,
-                    rr.descricao_erp, rr.manual_note, rr.tipo_conciliacao,
-                    rr.favorecido_banco
-                FROM reconciliation_results rr
-                WHERE rr.manual_flag = 1
-                  AND rr.status = 'CONCILIADO'
-                ORDER BY rr.updated_at DESC
-                """
-            ).fetchall()
+            if partner_name:
+                rows = conn.execute(
+                    """
+                    SELECT DISTINCT
+                        rr.data_banco, rr.valor_banco, rr.documento_banco,
+                        rr.descricao_banco, rr.data_erp, rr.valor_erp,
+                        rr.descricao_erp, rr.manual_note, rr.tipo_conciliacao,
+                        rr.favorecido_banco
+                    FROM reconciliation_results rr
+                    WHERE rr.manual_flag = 1
+                      AND rr.status = 'CONCILIADO'
+                      AND (
+                          rr.attributed_partner = ?
+                          OR rr.attributed_partner IS NULL
+                          OR rr.attributed_partner = ''
+                      )
+                    ORDER BY rr.updated_at DESC
+                    """,
+                    (partner_name,)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT DISTINCT
+                        rr.data_banco, rr.valor_banco, rr.documento_banco,
+                        rr.descricao_banco, rr.data_erp, rr.valor_erp,
+                        rr.descricao_erp, rr.manual_note, rr.tipo_conciliacao,
+                        rr.favorecido_banco
+                    FROM reconciliation_results rr
+                    WHERE rr.manual_flag = 1
+                      AND rr.status = 'CONCILIADO'
+                    ORDER BY rr.updated_at DESC
+                    """
+                ).fetchall()
         return [dict(r) for r in rows]
 
     def count_manual_memory(self) -> int:
