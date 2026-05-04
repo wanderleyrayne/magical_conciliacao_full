@@ -29,15 +29,39 @@ class ErpHistoryWindow:
         # Filtros
         fil = tk.Frame(self.win)
         fil.pack(fill="x", padx=10, pady=(8, 0))
+
         tk.Label(fil, text="Parceiro:").pack(side="left")
         self.parceiro_var = tk.StringVar(value="TODOS")
         self.cb_parceiro  = ttk.Combobox(fil, textvariable=self.parceiro_var,
-                                          state="readonly", width=20)
+                                          state="readonly", width=18)
         self.cb_parceiro.pack(side="left", padx=6)
         self.cb_parceiro.bind("<<ComboboxSelected>>", lambda e: self._load_batches())
 
+        tk.Label(fil, text="Data:").pack(side="left", padx=(12,0))
+        self.data_var = tk.StringVar(value="")
+        data_entry = ttk.Entry(fil, textvariable=self.data_var, width=12)
+        data_entry.pack(side="left", padx=4)
+        tk.Label(fil, text="(dd/mm/aaaa)", fg="#94a3b8",
+                 font=("Arial", 8)).pack(side="left")
+
+        def _set_hoje():
+            from datetime import date
+            self.data_var.set(date.today().strftime("%d/%m/%Y"))
+            self._load_batches()
+
+        ttk.Button(fil, text="Hoje", command=_set_hoje).pack(side="left", padx=4)
+        ttk.Button(fil, text="Limpar", command=lambda: (
+            self.data_var.set(""), self._load_batches()
+        )).pack(side="left")
+
+        # Filtro simulação
+        self.mostrar_simulacao = tk.BooleanVar(value=False)
+        ttk.Checkbutton(fil, text="Mostrar simulações",
+                        variable=self.mostrar_simulacao,
+                        command=self._load_batches).pack(side="left", padx=(16,0))
+
         ttk.Button(fil, text="↺ Atualizar",
-                   command=self._load_batches).pack(side="left", padx=6)
+                   command=self._load_batches).pack(side="left", padx=8)
 
         self.lbl_total = tk.Label(fil, text="", font=("Arial", 9, "bold"))
         self.lbl_total.pack(side="right")
@@ -150,6 +174,22 @@ class ErpHistoryWindow:
         if filtro != "TODOS":
             batches = [b for b in batches
                        if b.get("partner_name","").upper() == filtro.upper()]
+
+        # Filtro de data
+        data_filtro = self.data_var.get().strip()
+        if data_filtro:
+            try:
+                import pandas as _pd
+                dt_filtro = _pd.to_datetime(data_filtro, dayfirst=True)
+                data_fmt  = dt_filtro.strftime("%Y-%m-%d")
+                batches = [b for b in batches
+                           if str(b.get("created_at","")).startswith(data_fmt)]
+            except Exception:
+                pass
+
+        # Filtro simulação
+        if not self.mostrar_simulacao.get():
+            batches = [b for b in batches if not b.get("dry_run")]
 
         total_valor = 0.0
 

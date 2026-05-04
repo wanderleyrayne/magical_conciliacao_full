@@ -343,7 +343,7 @@ class ErpLancamentoWindow:
             "data":      "Data",
             "id_evento": "ID Evento",
             "categoria": "Categoria [ID]",
-            "descricao": "Descrição (enviada à API)",
+            "descricao": "Descrição ",
             "valor":     "Valor",
             "forma_pgto":"Modo Pgto",
             "aviso":     "Aviso / Observação",
@@ -855,8 +855,9 @@ class ErpLancamentoWindow:
     # =========================================================================
 
     def _validate_all(self, data: pd.DataFrame) -> pd.DataFrame:
-        # ── Detecção de duplicatas (Tipo 1: data + descrição + valor idênticos) ──
-        # Chave: data + coluna PARA LANÇAMENTO (descrição) + valor
+        # ── Detecção de duplicatas ────────────────────────────────────────────
+        # Chave: data + descrição + valor + ID evento
+        # Se o ID evento é diferente → mesmo manobrista em eventos diferentes → NÃO é duplicata
         dup_indices = set()
         seen = {}
 
@@ -875,16 +876,19 @@ class ErpLancamentoWindow:
             except Exception:
                 valor = 0.0
 
-            chave = (data_val, descricao, valor)
+            # ID evento faz parte da chave — mesmo manobrista em eventos distintos não é duplicata
+            id_evento_raw = str(row.get(self.COL_ID_EVENTO) or "").strip()
+            id_evento_key = id_evento_raw if id_evento_raw not in ("nan", "", "Sem ID") else "__sem_id__"
+
+            chave = (data_val, descricao, valor, id_evento_key)
 
             if chave in seen:
-                # Marca tanto a primeira ocorrência quanto esta como duplicata
                 dup_indices.add(seen[chave])
                 dup_indices.add(i)
             else:
                 seen[chave] = i
 
-        # Valida cada linha passando a informação de duplicata
+        # Valida cada linha
         rows = []
         for i, row in data.iterrows():
             validated = self._validate_row(i, row, is_duplicate=(i in dup_indices))
@@ -895,8 +899,29 @@ class ErpLancamentoWindow:
         avisos = []
         status = self.STATUS_OK
 
-        # ── DUPLICATA ─────────────────────────────────────────────────────────
-        if is_duplicate:
+        # ── JÁ LANÇADO ANTERIORMENTE ──────────────────────────────────────────
+        if not is_duplicate:
+            try:
+                partner = self.partner_var.get() if hasattr(self, 'partner_var') else ""
+                file_name = Path(self.file_path).name if self.file_path else ""
+                linha_num = idx + 5  # offset do header
+
+                ja_lancado = self.repo.check_already_launched(
+                    partner_name=partner,
+                    file_name=file_name,
+                    linha=linha_num,
+                    descricao=str(row.get(self.COL_LANCAMENTO) or ""),
+                    valor=abs(float(row.get(self.COL_VALOR) or 0)),
+                )
+                if ja_lancado and not self._dry_run_var.get():
+                    avisos.append(
+                        f"Já lançado em {str(ja_lancado.get('created_at',''))[:16]}"
+                        f" | ID API: {ja_lancado.get('id_api','—')}"
+                        f" — linha ignorada no relançamento"
+                    )
+                    status = self.STATUS_BLOQUEIO
+            except Exception:
+                pass
             avisos.append("Linha duplicada — mesma data, descrição e valor")
             status = self.STATUS_BLOQUEIO
 
@@ -955,14 +980,44 @@ class ErpLancamentoWindow:
                     status = max(status, self.STATUS_ATENCAO, key=self._status_weight)
 
         # ── VALOR ─────────────────────────────────────────────────────────────
-        try:
-            valor = abs(float(row.get(self.COL_VALOR, 0)))
-            if valor <= 0:
-                avisos.append("Valor zerado")
-                status = self.STATUS_BLOQUEIO
-        except Exception:
-            valor = 0
-            avisos.append("Valor inválido")
+        # Aceita todos os formatos: Número, Moeda, Contábil (pandas já lê como float),
+        # texto BR "238,00" / "2.230,03", texto EN "238.00"
+        valor_raw = row.get(self.COL_VALOR, 0)
+        valor = 0.0
+
+        def _parse_valor(v) -> float | None:
+            import re as _re
+            # 1. Já é numérico (Número/Moeda/Contábil do Excel → pandas float)
+            if isinstance(v, (int, float)):
+                try:
+                    f = float(v)
+                    return abs(f) if f != float('nan') else None
+                except Exception:
+                    return None
+            s = str(v or "").strip()
+            # Remove símbolos de moeda e espaços
+            s = _re.sub(r'[R\$\s]', '', s)
+            if not s or s in ("nan", "None", ""):
+                return None
+            # Formato BR: vírgula como decimal (238,00 / 2.230,03)
+            if ',' in s:
+                try:
+                    return abs(float(s.replace(".", "").replace(",", ".")))
+                except Exception:
+                    pass
+            # Formato EN ou número puro: ponto como decimal ou sem decimal
+            try:
+                return abs(float(s.replace(",", "")))
+            except Exception:
+                pass
+            return None
+
+        resultado = _parse_valor(valor_raw)
+
+        if resultado and resultado > 0:
+            valor = resultado
+        elif resultado == 0.0 or resultado is None:
+            avisos.append(f"Valor inválido ou zerado: '{valor_raw}'")
             status = self.STATUS_BLOQUEIO
 
         # ── DESCRIÇÃO — coluna "PARA LANÇAMENTO DO FINANCEIRO NO Me Eventos" ──
