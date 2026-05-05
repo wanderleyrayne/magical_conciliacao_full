@@ -343,7 +343,7 @@ class ErpLancamentoWindow:
             "data":      "Data",
             "id_evento": "ID Evento",
             "categoria": "Categoria [ID]",
-            "descricao": "Descrição ",
+            "descricao": "Descrição (enviada à API)",
             "valor":     "Valor",
             "forma_pgto":"Modo Pgto",
             "aviso":     "Aviso / Observação",
@@ -856,8 +856,11 @@ class ErpLancamentoWindow:
 
     def _validate_all(self, data: pd.DataFrame) -> pd.DataFrame:
         # ── Detecção de duplicatas ────────────────────────────────────────────
-        # Chave: data + descrição + valor + ID evento
-        # Se o ID evento é diferente → mesmo manobrista em eventos diferentes → NÃO é duplicata
+        # Regra: só é duplicata quando TODOS esses campos são iguais:
+        #   data + fornecedor + favorecido + valor + id_evento
+        #
+        # Quando "Sem ID": também inclui a descrição na chave
+        # — evita falsos positivos em despesas diferentes no mesmo dia
         dup_indices = set()
         seen = {}
 
@@ -867,20 +870,27 @@ class ErpLancamentoWindow:
             except Exception:
                 data_val = str(row.get(self.COL_DATA) or "")
 
+            # Descrição completa (para diferenciar CSLL de IRPJ etc.)
             descricao = str(row.get(self.COL_LANCAMENTO) or "").strip()
             if not descricao or descricao in ("nan", "#REF!"):
                 descricao = str(row.get(self.COL_DETALHE) or "").strip()
+
+            # Fornecedor / favorecido
+            fornecedor = str(row.get("FORNECEDOR") or row.get("FAVORECIDO") or "").strip()
 
             try:
                 valor = round(abs(float(row.get(self.COL_VALOR) or 0)), 2)
             except Exception:
                 valor = 0.0
 
-            # ID evento faz parte da chave — mesmo manobrista em eventos distintos não é duplicata
+            # ID evento — quando tem ID diferente não é duplicata (manobrista em eventos distintos)
             id_evento_raw = str(row.get(self.COL_ID_EVENTO) or "").strip()
-            id_evento_key = id_evento_raw if id_evento_raw not in ("nan", "", "Sem ID") else "__sem_id__"
+            tem_id = id_evento_raw not in ("nan", "", "Sem ID")
+            id_evento_key = id_evento_raw if tem_id else "__sem_id__"
 
-            chave = (data_val, descricao, valor, id_evento_key)
+            # Chave de duplicata: id_evento + valor + fornecedor + descrição
+            # Data de pagamento NÃO entra — pode variar sem ser duplicata
+            chave = (id_evento_key, valor, fornecedor, descricao)
 
             if chave in seen:
                 dup_indices.add(seen[chave])
