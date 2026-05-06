@@ -728,9 +728,14 @@ class ErpLancamentoWindow:
             filetypes=[("Excel", "*.xlsx"), ("Todos", "*.*")]
         )
         if path:
-            self.file_path = path
-            self.file_label.config(text=Path(path).name, fg="#166534")
-            self._load_and_validate()
+            self._load_file_from_path(path)
+
+    def _load_file_from_path(self, path: str):
+        """Carrega planilha a partir de um caminho — usado pela tela de Pendências."""
+        self.file_path = path
+        self.file_label.config(text=Path(path).name, fg="#166534")
+        self._event_date_cache = {}
+        self._load_and_validate()
 
     def _load_and_validate(self):
         if not self.file_path:
@@ -885,12 +890,23 @@ class ErpLancamentoWindow:
 
             # ID evento — quando tem ID diferente não é duplicata (manobrista em eventos distintos)
             id_evento_raw = str(row.get(self.COL_ID_EVENTO) or "").strip()
-            tem_id = id_evento_raw not in ("nan", "", "Sem ID")
+            SEM_ID_VALORES = {"nan", "", "sem id", "preencher id", "preencher", "s/id", "n/a", "na", "-"}
+            tem_id = id_evento_raw.lower() not in SEM_ID_VALORES
             id_evento_key = id_evento_raw if tem_id else "__sem_id__"
 
-            # Chave de duplicata: id_evento + valor + fornecedor + descrição
-            # Data de pagamento NÃO entra — pode variar sem ser duplicata
-            chave = (id_evento_key, valor, fornecedor, descricao)
+            # Favorecido separado para compor chave
+            favorecido = str(row.get("FAVORECIDO") or "").strip()
+
+            # Chave de duplicata: id_evento + valor + fornecedor + favorecido + descrição
+            # Quando sem ID de evento: inclui linha como desempate adicional
+            # pois despesas diferentes no mesmo evento/sem-evento nunca são duplicatas
+            # a menos que TODOS os campos sejam idênticos incluindo fornecedor
+            if tem_id:
+                # Com ID de evento: fornecedor+valor+descricao devem ser iguais
+                chave = (id_evento_key, valor, fornecedor, favorecido, descricao)
+            else:
+                # Sem ID: adiciona linha como desempate — só duplicata se linha repetida
+                chave = (id_evento_key, valor, fornecedor, favorecido, descricao, str(i))
 
             if chave in seen:
                 dup_indices.add(seen[chave])
@@ -910,7 +926,10 @@ class ErpLancamentoWindow:
         status = self.STATUS_OK
 
         # ── JÁ LANÇADO ANTERIORMENTE ──────────────────────────────────────────
-        if not is_duplicate:
+        if is_duplicate:
+            avisos.append("Linha duplicada — mesma data, descrição e valor")
+            status = self.STATUS_BLOQUEIO
+        else:
             try:
                 partner = self.partner_var.get() if hasattr(self, 'partner_var') else ""
                 file_name = Path(self.file_path).name if self.file_path else ""
@@ -932,8 +951,6 @@ class ErpLancamentoWindow:
                     status = self.STATUS_BLOQUEIO
             except Exception:
                 pass
-            avisos.append("Linha duplicada — mesma data, descrição e valor")
-            status = self.STATUS_BLOQUEIO
 
         # ── DATA ──────────────────────────────────────────────────────────────
         data_val = row.get(self.COL_DATA)
@@ -965,7 +982,7 @@ class ErpLancamentoWindow:
                 id_evento_display = id_evento_raw.strftime("%d/%m/%Y")
                 avisos.append(f"Data '{id_evento_display}' — nenhum evento encontrado")
                 status = max(status, self.STATUS_ATENCAO, key=self._status_weight)
-        elif str(id_evento_raw or "").strip().lower() in ("sem id", "preencher id", "nan", ""):
+        elif str(id_evento_raw or "").strip().lower() in ("sem id", "preencher id", "preencher", "s/id", "nan", ""):
             id_evento_display = "Sem ID"
             avisos.append("Sem ID de evento — lançará sem vínculo com evento")
             status = max(status, self.STATUS_ATENCAO, key=self._status_weight)
@@ -1392,6 +1409,12 @@ class ErpLancamentoWindow:
         except Exception:
             pass
 
+        # Notificação WhatsApp — envia em modo real e em simulação
+        self._notificar_lancamento(lancados, erros, batch_id, dry_run=dry_run)
+
+        # Atualiza status no PocketBase se veio de uma pendência
+        self._atualizar_pendencia_pos_lancamento(lancados, erros, dry_run)
+
         msg = (
             f"Processo concluído!\n\n"
             f"{'Simuladas' if dry_run else 'Lançadas'}: {lancados}\n"
@@ -1401,3 +1424,155 @@ class ErpLancamentoWindow:
             msg += "\nNenhum dado foi enviado para a API (modo simulação)."
 
         messagebox.showinfo("Resultado", msg)
+
+    def _atualizar_pendencia_pos_lancamento(self, lancados: int,
+                                             erros: int, dry_run: bool):
+        """Atualiza status da pendência no PocketBase após lançamento no ERP."""
+        planilha_id  = getattr(self, "_pendencia_id", None)
+        casa         = getattr(self, "_pendencia_casa", "")
+        if not planilha_id:
+            return  # não veio da tela de Pendências
+
+        import threading
+        def _do():
+            try:
+                import sqlite3
+                db_path = str(self.repo.db.db_path)
+                def get_cfg(chave, default=""):
+                    try:
+                        with sqlite3.connect(db_path) as conn:
+                            conn.execute("CREATE TABLE IF NOT EXISTS nuvem_config (chave TEXT PRIMARY KEY, valor TEXT)")
+                            row = conn.execute("SELECT valor FROM nuvem_config WHERE chave=? LIMIT 1", (chave,)).fetchone()
+                            return row[0] if row and row[0] else default
+                    except Exception:
+                        return default
+
+                pb_url   = get_cfg("pb_url")
+                pb_email = get_cfg("pb_email")
+                pb_senha = get_cfg("pb_senha")
+                meu_nome = get_cfg("meu_nome", "Sistema")
+
+                if not pb_url:
+                    return
+
+                from cloud_sync import CloudSync
+                cs = CloudSync(pb_url, pb_email, pb_senha)
+
+                # Calcula valor total
+                valor_total = 0.0
+                try:
+                    if self.df_preview is not None:
+                        mask = self.df_preview["_status"] != self.STATUS_BLOQUEIO
+                        valor_total = float(self.df_preview.loc[mask, "_valor"].sum())
+                except Exception:
+                    pass
+
+                # Atualiza status para "lancado"
+                cs.confirmar_lancamento(
+                    planilha_id = planilha_id,
+                    casa        = casa,
+                    usuario     = meu_nome,
+                    ok          = lancados,
+                    erros       = erros,
+                    valor_total = valor_total,
+                )
+
+            except Exception as e:
+                import logging
+                logging.getLogger("magical_conciliacao").error(
+                    f"[PENDENCIA] Erro ao atualizar status: {e}")
+
+        threading.Thread(target=_do, daemon=True).start()
+
+    def _notificar_lancamento(self, lancados: int, erros: int,
+                               batch_id, dry_run: bool = False):
+        """Envia notificação WhatsApp após lançamento no ERP."""
+        import threading
+        def _enviar():
+            try:
+                import sqlite3
+                db_path = str(self.repo.db.db_path)
+                def get_cfg(chave, default=""):
+                    try:
+                        with sqlite3.connect(db_path) as conn:
+                            conn.execute("CREATE TABLE IF NOT EXISTS nuvem_config (chave TEXT PRIMARY KEY, valor TEXT)")
+                            row = conn.execute("SELECT valor FROM nuvem_config WHERE chave=? LIMIT 1", (chave,)).fetchone()
+                            return row[0] if row and row[0] else default
+                    except Exception:
+                        return default
+
+                evo_url       = get_cfg("evo_url")
+                evo_key       = get_cfg("evo_key")
+                instancia     = get_cfg("evo_instancia", "wanderley")
+                num_marcielo  = get_cfg("num_marcielo")
+                num_wanderley = get_cfg("num_wanderley")
+                meu_nome      = get_cfg("meu_nome", "Sistema")
+
+                if not evo_url or not evo_key:
+                    return
+
+                from notificador import Notificador
+                n = Notificador(evo_url, evo_key, instancia)
+
+                st = n.status_instancia()
+                if not st.get("conectado"):
+                    return
+
+                parceiro  = self.partner_var.get() if hasattr(self, 'partner_var') else ""
+                file_name = Path(self.file_path).name if self.file_path else "planilha"
+
+                valor_total = 0.0
+                try:
+                    if self.df_preview is not None:
+                        mask = self.df_preview["_status"] != self.STATUS_BLOQUEIO
+                        valor_total = float(self.df_preview.loc[mask, "_valor"].sum())
+                except Exception:
+                    pass
+
+                # Prefixo simulação
+                prefixo = "[SIMULACAO] " if dry_run else ""
+
+                if erros == 0:
+                    msg = (
+                        f"*{prefixo}Magical — ERP Lancado*\n\n"
+                        f"Casa: {parceiro}\n"
+                        f"Planilha: {file_name}\n"
+                        f"Lancado por: {meu_nome}\n"
+                        f"Total: R$ {valor_total:,.2f}\n"
+                        f"Lancamentos: {lancados}\n\n"
+                        f"CNAB disponivel para geracao."
+                    ).replace(",", "X").replace(".", ",").replace("X", ".")
+                else:
+                    msg = (
+                        f"*{prefixo}Magical — ERP com Erros*\n\n"
+                        f"Casa: {parceiro}\n"
+                        f"Planilha: {file_name}\n"
+                        f"Lancados: {lancados} | Erros: {erros}\n\n"
+                        f"Verifique os erros no sistema."
+                    )
+
+                if num_marcielo:
+                    n.enviar_contato(num_marcielo, msg)
+
+                if num_wanderley and num_wanderley != num_marcielo:
+                    n.enviar_contato(num_wanderley, msg)
+
+                # Salva no PocketBase
+                pb_url   = get_cfg("pb_url")
+                pb_email = get_cfg("pb_email")
+                pb_senha = get_cfg("pb_senha")
+                if pb_url and pb_email and pb_senha:
+                    from cloud_sync import CloudSync
+                    cs = CloudSync(pb_url, pb_email, pb_senha)
+                    cs.criar_notificacao(
+                        tipo        = "erp_lancado",
+                        casa        = parceiro,
+                        mensagem    = msg,
+                        planilha_id = str(batch_id or ""),
+                        destinatario= "marcielo",
+                    )
+
+            except Exception:
+                pass
+
+        threading.Thread(target=_enviar, daemon=True).start()

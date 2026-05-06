@@ -287,8 +287,9 @@ class SettingsWindow:
         ).pack(anchor="w", pady=(12, 0))
 
         # =========================
-        # ABA API MEEVENTOS
+        # ABA API MEEVENTOS — visível para todos
         # =========================
+        meu_perfil_cfg = self._load_nuvem_config_static("meu_perfil", "financeiro_ti")
         tab_api = tk.Frame(notebook)
         notebook.add(tab_api, text="API MeEventos")
 
@@ -400,8 +401,210 @@ class SettingsWindow:
         # =========================
         # ABA BACKUP
         # =========================
-        tab_backup = tk.Frame(notebook)
-        notebook.add(tab_backup, text="Backup")
+        # Backup — só financeiro_ti
+        if meu_perfil_cfg in ("financeiro_ti", ""):
+            tab_backup = tk.Frame(notebook)
+            notebook.add(tab_backup, text="Backup")
+        else:
+            tab_backup = tk.Frame(notebook)
+
+        # Nuvem — só financeiro_ti
+        if meu_perfil_cfg in ("financeiro_ti", ""):
+            tab_nuvem_show = True
+        else:
+            tab_nuvem_show = False
+
+        # ── ABA CONTAS BANCÁRIAS — só para perfil financeiro_cnab ─────────────
+        meu_perfil = meu_perfil_cfg
+        if meu_perfil == "financeiro_cnab":
+            tab_contas = tk.Frame(notebook)
+            notebook.add(tab_contas, text="Contas Bancárias")
+            self._build_contas_tab(tab_contas)
+
+        # ── ABA NUVEM ─────────────────────────────────────────────────────────
+        # Nuvem — só financeiro_ti
+        if tab_nuvem_show:
+            tab_nuvem = tk.Frame(notebook)
+            notebook.add(tab_nuvem, text="Nuvem")
+        else:
+            tab_nuvem = tk.Frame(notebook)  # não adicionado
+
+        tk.Label(
+            tab_nuvem,
+            text="Configurações de sincronização em nuvem (PocketBase) e notificações WhatsApp (Evolution API).",
+            anchor="w", fg="#475569", justify="left", wraplength=580,
+        ).pack(fill="x", padx=10, pady=(10, 6))
+
+        # PocketBase
+        pb_frame = tk.LabelFrame(tab_nuvem, text="PocketBase", padx=10, pady=8)
+        pb_frame.pack(fill="x", padx=10, pady=(0, 8))
+
+        campos_pb = [
+            ("URL:",   "pb_url",    "https://pocketbase-railway-production-336e.up.railway.app"),
+            ("Email:", "pb_email",  "wanderleyrayne@hotmail.com"),
+            ("Senha:", "pb_senha",  ""),
+        ]
+        self._nuvem_vars = {}
+        for label, chave, placeholder in campos_pb:
+            row = tk.Frame(pb_frame)
+            row.pack(fill="x", pady=2)
+            tk.Label(row, text=label, width=10, anchor="w").pack(side="left")
+            var = tk.StringVar(value=self._load_nuvem_config(chave, placeholder))
+            show = "*" if "senha" in chave.lower() else ""
+            ttk.Entry(row, textvariable=var, width=55, show=show).pack(side="left")
+            self._nuvem_vars[chave] = var
+
+        # Evolution API
+        evo_frame = tk.LabelFrame(tab_nuvem, text="Evolution API (WhatsApp)", padx=10, pady=8)
+        evo_frame.pack(fill="x", padx=10, pady=(0, 8))
+
+        campos_evo = [
+            ("URL:",      "evo_url",      "https://evolution-api-production-cd64.up.railway.app"),
+            ("API Key:",  "evo_key",      "magical_evo_2026"),
+            ("Instância:","evo_instancia","wanderley"),
+        ]
+        for label, chave, placeholder in campos_evo:
+            row = tk.Frame(evo_frame)
+            row.pack(fill="x", pady=2)
+            tk.Label(row, text=label, width=10, anchor="w").pack(side="left")
+            var = tk.StringVar(value=self._load_nuvem_config(chave, placeholder))
+            show = "*" if "key" in chave.lower() else ""
+            ttk.Entry(row, textvariable=var, width=55, show=show).pack(side="left")
+            self._nuvem_vars[chave] = var
+
+        # Destinos de notificação
+        dest_frame = tk.LabelFrame(tab_nuvem, text="Destinos de notificação", padx=10, pady=8)
+        dest_frame.pack(fill="x", padx=10, pady=(0, 8))
+
+        campos_dest = [
+            ("Wanderley:", "num_wanderley", "5521967503863@s.whatsapp.net"),
+            ("Michell:",   "num_michell",   ""),
+            ("Marcielo:",  "num_marcielo",  ""),
+            ("Grupo:",     "grupo_aprovacao","120363427344003548@g.us"),
+        ]
+        for label, chave, placeholder in campos_dest:
+            row = tk.Frame(dest_frame)
+            row.pack(fill="x", pady=2)
+            tk.Label(row, text=label, width=10, anchor="w").pack(side="left")
+            var = tk.StringVar(value=self._load_nuvem_config(chave, placeholder))
+            ttk.Entry(row, textvariable=var, width=55).pack(side="left")
+            self._nuvem_vars[chave] = var
+
+        # Perfil do usuário
+        perfil_frame = tk.LabelFrame(tab_nuvem, text="Meu perfil", padx=10, pady=8)
+        perfil_frame.pack(fill="x", padx=10, pady=(0, 8))
+
+        row = tk.Frame(perfil_frame)
+        row.pack(fill="x", pady=2)
+        tk.Label(row, text="Nome:", width=10, anchor="w").pack(side="left")
+        var_nome = tk.StringVar(value=self._load_nuvem_config("meu_nome", "Wanderley"))
+        ttk.Entry(row, textvariable=var_nome, width=30).pack(side="left")
+        self._nuvem_vars["meu_nome"] = var_nome
+
+        row2 = tk.Frame(perfil_frame)
+        row2.pack(fill="x", pady=2)
+        tk.Label(row2, text="Perfil:", width=10, anchor="w").pack(side="left")
+        var_perfil = tk.StringVar(value=self._load_nuvem_config("meu_perfil", "financeiro_ti"))
+
+        # Perfil só editável pelo financeiro_ti (Wanderley/TI)
+        # Michell e Marcielo não podem alterar o próprio perfil
+        perfil_state = "readonly" if meu_perfil_cfg == "financeiro_ti" else "disabled"
+        cb_perfil = ttk.Combobox(row2, textvariable=var_perfil, width=28,
+                                  state=perfil_state,
+                                  values=["financeiro_ti", "operacional_erp", "financeiro_cnab"])
+        cb_perfil.pack(side="left")
+
+        if meu_perfil_cfg != "financeiro_ti":
+            tk.Label(row2, text="🔒 Definido pelo administrador",
+                     fg="#94a3b8", font=("Arial", 8)).pack(side="left", padx=6)
+
+        self._nuvem_vars["meu_perfil"] = var_perfil
+
+        # Grupos WhatsApp por casa
+        grupos_frame = tk.LabelFrame(tab_nuvem, text="Grupos WhatsApp por Casa",
+                                      padx=10, pady=8)
+        grupos_frame.pack(fill="x", padx=10, pady=(0, 8))
+
+        tk.Label(grupos_frame,
+                 text="ID do grupo no formato: 120363xxxxxxxx@g.us\n"
+                      "Use o script listar_grupos.py para obter os IDs.",
+                 fg="#64748b", font=("Arial", 8), justify="left"
+                 ).pack(anchor="w", pady=(0, 6))
+
+        self._grupo_vars = {}
+        grupos_grid = tk.Frame(grupos_frame)
+        grupos_grid.pack(fill="x")
+
+        for i, p in enumerate(PARTNERS):
+            nome = p["partner_name"]
+            col  = (i % 2) * 3
+            row  = i // 2
+            tk.Label(grupos_grid, text=f"{nome}:",
+                     width=14, anchor="e").grid(
+                row=row, column=col, sticky="e", padx=(0, 4), pady=2)
+            var = tk.StringVar(
+                value=self._load_nuvem_config(f"grupo_{nome.lower().replace(' ','_')}", ""))
+            ttk.Entry(grupos_grid, textvariable=var, width=35).grid(
+                row=row, column=col+1, sticky="w", padx=(0, 20), pady=2)
+            self._grupo_vars[nome] = var
+
+        # Botões
+        btn_frame = tk.Frame(tab_nuvem)
+        btn_frame.pack(fill="x", padx=10, pady=8)
+
+        def _salvar_nuvem():
+            for chave, var in self._nuvem_vars.items():
+                self._save_nuvem_config(chave, var.get().strip())
+            # Salva grupos das casas
+            if hasattr(self, '_grupo_vars'):
+                for nome, var in self._grupo_vars.items():
+                    chave_grupo = f"grupo_{nome.lower().replace(' ','_')}"
+                    self._save_nuvem_config(chave_grupo, var.get().strip())
+            from tkinter import messagebox
+            messagebox.showinfo("Nuvem", "Configurações salvas!", parent=self.top)
+
+        def _testar_nuvem():
+            from tkinter import messagebox
+            try:
+                from cloud_sync import CloudSync
+                cs = CloudSync(
+                    self._nuvem_vars["pb_url"].get(),
+                    self._nuvem_vars["pb_email"].get(),
+                    self._nuvem_vars["pb_senha"].get(),
+                )
+                ok = cs.ping()
+                if ok:
+                    messagebox.showinfo("Nuvem", "PocketBase: conectado!", parent=self.top)
+                else:
+                    messagebox.showerror("Nuvem", "PocketBase: sem conexao.", parent=self.top)
+            except Exception as e:
+                messagebox.showerror("Nuvem", f"Erro: {e}", parent=self.top)
+
+        def _testar_whatsapp():
+            from tkinter import messagebox
+            try:
+                from notificador import Notificador
+                n = Notificador(
+                    self._nuvem_vars["evo_url"].get(),
+                    self._nuvem_vars["evo_key"].get(),
+                    self._nuvem_vars["evo_instancia"].get(),
+                )
+                st = n.status_instancia()
+                if st.get("conectado"):
+                    num = self._nuvem_vars["num_wanderley"].get()
+                    n.enviar_contato(num, "Teste Magical Conciliacao - WhatsApp OK!")
+                    messagebox.showinfo("WhatsApp", "Mensagem de teste enviada!", parent=self.top)
+                else:
+                    messagebox.showerror("WhatsApp",
+                        f"Instancia nao conectada: {st.get('state')}", parent=self.top)
+            except Exception as e:
+                messagebox.showerror("WhatsApp", f"Erro: {e}", parent=self.top)
+
+        ttk.Button(btn_frame, text="💾 Salvar", command=_salvar_nuvem).pack(side="left")
+        ttk.Button(btn_frame, text="🔌 Testar PocketBase",
+                   command=_testar_nuvem).pack(side="left", padx=8)
+        ttk.Button(btn_frame, text="📱 Testar WhatsApp",
+                   command=_testar_whatsapp).pack(side="left")
 
         tk.Label(
             tab_backup,
@@ -551,6 +754,217 @@ class SettingsWindow:
 
         ttk.Button(footer_inner, text="📋 Ver logs",
                    command=_open_logs).pack(side="left", padx=(8, 0))
+
+    def _load_nuvem_config_static(self, chave: str, default: str = "") -> str:
+        """Versão estática do load_nuvem_config — usável antes da UI estar pronta."""
+        try:
+            import sqlite3
+            db_path = str(self.repo.db.db_path)
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS nuvem_config "
+                    "(chave TEXT PRIMARY KEY, valor TEXT)"
+                )
+                row = conn.execute(
+                    "SELECT valor FROM nuvem_config WHERE chave=? LIMIT 1",
+                    (chave,)
+                ).fetchone()
+                return row[0] if row and row[0] else default
+        except Exception:
+            return default
+
+    def _build_contas_tab(self, tab):
+        """Constrói a aba de contas bancárias (só para financeiro_cnab)."""
+
+        tk.Label(
+            tab,
+            text="Dados da conta Itaú de cada casa para geração do CNAB 240.\n"
+                 "Visível apenas para o perfil: Financeiro CNAB (Marcielo).",
+            anchor="w", fg="#475569", justify="left", wraplength=680,
+        ).pack(fill="x", padx=10, pady=(10, 4))
+
+        tk.Label(
+            tab,
+            text="Agência: 4 dígitos sem DV  ·  Conta: sem dígito verificador  ·  DV: 1 dígito",
+            anchor="w", fg="#94a3b8", font=("Arial", 8),
+        ).pack(fill="x", padx=10, pady=(0, 6))
+
+        # Tabela
+        cols = ("parceiro", "cnpj", "agencia", "conta", "dac")
+        self.contas_tree = ttk.Treeview(
+            tab, columns=cols, show="headings", height=11)
+        for col, hd, w in [
+            ("parceiro", "Parceiro",  130),
+            ("cnpj",     "CNPJ",      160),
+            ("agencia",  "Agência",    80),
+            ("conta",    "Conta",     130),
+            ("dac",      "DV",         50),
+        ]:
+            self.contas_tree.heading(col, text=hd)
+            self.contas_tree.column(col, width=w, anchor="w")
+        self.contas_tree.pack(fill="x", padx=10, pady=(0, 6))
+        self.contas_tree.bind("<<TreeviewSelect>>", self._on_conta_select)
+        self._load_contas_table()
+
+        # Formulário de edição
+        form = tk.LabelFrame(tab, text="Editar conta selecionada",
+                              padx=10, pady=8)
+        form.pack(fill="x", padx=10, pady=(0, 6))
+
+        self._conta_parceiro_lbl = tk.Label(form, text="Selecione uma linha acima",
+                                             fg="#64748b")
+        self._conta_parceiro_lbl.grid(row=0, column=0, columnspan=6,
+                                       sticky="w", pady=(0, 6))
+
+        self._conta_vars = {}
+        for i, (label, chave, w) in enumerate([
+            ("Agência:", "agencia", 8),
+            ("Conta:",   "conta",  16),
+            ("DV:",      "dac",     4),
+        ]):
+            tk.Label(form, text=label).grid(row=1, column=i*2, sticky="w", padx=(0,4))
+            var = tk.StringVar()
+            ttk.Entry(form, textvariable=var, width=w).grid(
+                row=1, column=i*2+1, sticky="w", padx=(0, 16))
+            self._conta_vars[chave] = var
+
+        def _salvar():
+            sel = self.contas_tree.selection()
+            if not sel:
+                messagebox.showwarning("Contas", "Selecione uma casa primeiro.",
+                                       parent=self.top)
+                return
+            parceiro = self.contas_tree.item(sel[0], "values")[0]
+            ag  = self._conta_vars["agencia"].get().strip()
+            ct  = self._conta_vars["conta"].get().strip()
+            dac = self._conta_vars["dac"].get().strip()
+
+            if not ag or not ct:
+                messagebox.showwarning("Contas",
+                    "Preencha pelo menos Agência e Conta.", parent=self.top)
+                return
+
+            self._save_conta_bancaria(parceiro, ag, ct, dac)
+            self._load_contas_table()
+            messagebox.showinfo("Contas",
+                f"Conta de {parceiro} salva!", parent=self.top)
+
+        tk.Button(form, text="💾 Salvar conta",
+                  command=_salvar,
+                  bg="#1e293b", fg="white", padx=12
+                  ).grid(row=1, column=6, padx=(16, 0))
+
+    def _load_contas_table(self):
+        """Popula tabela com os dados salvos de cada parceiro."""
+        if not hasattr(self, "contas_tree"):
+            return
+        for item in self.contas_tree.get_children():
+            self.contas_tree.delete(item)
+        for p in PARTNERS:
+            nome  = p["partner_name"]
+            cnpj  = p.get("cnpj", "")
+            dados = self._load_conta_bancaria(nome)
+            ag    = dados.get("agencia", "")
+            ct    = dados.get("conta", "")
+            dac   = dados.get("dac", "")
+            tag   = "ok" if ag and ct else "pendente"
+            self.contas_tree.insert("", "end", iid=nome, values=(
+                nome, cnpj, ag, ct, dac), tags=(tag,))
+        self.contas_tree.tag_configure("ok",      background="#d1fae5")
+        self.contas_tree.tag_configure("pendente", background="#fef3c7")
+
+    def _on_conta_select(self, event=None):
+        sel = self.contas_tree.selection()
+        if not sel:
+            return
+        parceiro = sel[0]
+        dados = self._load_conta_bancaria(parceiro)
+        self._conta_parceiro_lbl.config(
+            text=f"Editando: {parceiro}", fg="#1e293b")
+        self._conta_vars["agencia"].set(dados.get("agencia", ""))
+        self._conta_vars["conta"].set(dados.get("conta", ""))
+        self._conta_vars["dac"].set(dados.get("dac", ""))
+
+    def _load_conta_bancaria(self, parceiro: str) -> dict:
+        """Carrega dados bancários de um parceiro do banco local."""
+        try:
+            import sqlite3, json
+            db_path = str(self.repo.db.db_path)
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS contas_bancarias "
+                    "(parceiro TEXT PRIMARY KEY, dados TEXT)"
+                )
+                row = conn.execute(
+                    "SELECT dados FROM contas_bancarias WHERE parceiro=? LIMIT 1",
+                    (parceiro,)
+                ).fetchone()
+                return json.loads(row[0]) if row and row[0] else {}
+        except Exception:
+            return {}
+
+    def _save_conta_bancaria(self, parceiro: str, agencia: str,
+                              conta: str, dac: str):
+        """Salva dados bancários de um parceiro no banco local."""
+        try:
+            import sqlite3, json
+            db_path = str(self.repo.db.db_path)
+            dados   = json.dumps({"agencia": agencia, "conta": conta, "dac": dac})
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS contas_bancarias "
+                    "(parceiro TEXT PRIMARY KEY, dados TEXT)"
+                )
+                conn.execute(
+                    "INSERT INTO contas_bancarias(parceiro, dados) VALUES(?,?) "
+                    "ON CONFLICT(parceiro) DO UPDATE SET dados=excluded.dados",
+                    (parceiro, dados)
+                )
+                conn.commit()
+        except Exception:
+            pass
+
+    # =========================
+    # NUVEM CONFIG
+    # =========================
+    def _load_nuvem_config(self, chave: str, default: str = "") -> str:
+        """Carrega configuração de nuvem do banco local."""
+        try:
+            import sqlite3
+            db_path = str(self.repo.db.db_path)
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS nuvem_config "
+                    "(chave TEXT PRIMARY KEY, valor TEXT)"
+                )
+                row = conn.execute(
+                    "SELECT valor FROM nuvem_config WHERE chave=? LIMIT 1",
+                    (chave,)
+                ).fetchone()
+                if row:
+                    return row[0] or default
+        except Exception:
+            pass
+        return default
+
+    def _save_nuvem_config(self, chave: str, valor: str):
+        """Salva configuração de nuvem no banco local."""
+        try:
+            import sqlite3
+            db_path = str(self.repo.db.db_path)
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS nuvem_config "
+                    "(chave TEXT PRIMARY KEY, valor TEXT)"
+                )
+                conn.execute(
+                    "INSERT INTO nuvem_config(chave, valor) VALUES(?,?) "
+                    "ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor",
+                    (chave, valor)
+                )
+                conn.commit()
+        except Exception:
+            pass
 
     # =========================
     # API MEEVENTOS
