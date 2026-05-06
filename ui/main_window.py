@@ -35,6 +35,14 @@ class MainWindow:
         except Exception:
             pass
 
+        # Verifica identificação na primeira abertura
+        from ui.identificacao_window import verificar_identificacao
+        identificado = verificar_identificacao(
+            self.root, str(self.repo.db.db_path))
+        if not identificado:
+            self.root.destroy()
+            return
+
         self.files = {
             "Extrato bancário": {"path": None, "raw_df": None, "normalized_df": None, "summary": None},
             "ERP despesas": {"path": None, "raw_df": None, "normalized_df": None, "summary": None},
@@ -52,6 +60,10 @@ class MainWindow:
 
     def open_erp_lancamento(self):
         ErpLancamentoWindow(self.root)
+
+    def open_pendencias_window(self):
+        from ui.pendencias_window import PendenciasWindow
+        PendenciasWindow(self.root, db_path=str(self.repo.db.db_path))
 
     def open_settings_window(self):
         SettingsWindow(
@@ -193,6 +205,7 @@ class MainWindow:
         actions_row2.pack(fill="x", pady=(0, 8))
 
         ttk.Button(actions_row2, text="↑ Lançar no ERP", command=self.open_erp_lancamento).pack(side="left", padx=(0, 6))
+        ttk.Button(actions_row2, text="📋 Pendências", command=self.open_pendencias_window).pack(side="left", padx=(0, 6))
 
         progress_box = tk.LabelFrame(self.bottom_container, text="Processamento", bg="#f8fafc", padx=10, pady=10)
         progress_box.pack(fill="x", pady=(0, 0))

@@ -223,6 +223,7 @@ class DatabaseManager:
             self._ensure_column(conn, "reconciliation_runs", "run_version", "INTEGER DEFAULT 1")
             # Cargo/papel da entidade no grupo (importado da base de entidades)
             self._ensure_column(conn, "entities_master", "cargo_ocupacao", "TEXT")
+            self._ensure_column(conn, "erp_launch_batches", "created_at", "TEXT")
 
     def _ensure_column(self, conn, table_name: str, column_name: str, column_def: str):
         cols = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
