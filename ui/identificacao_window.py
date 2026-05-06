@@ -78,7 +78,8 @@ class IdentificacaoWindow:
         self.num_entry.focus()
         self.num_entry.bind("<Return>", lambda e: self._confirmar())
 
-        tk.Label(body, text="Aceita: 967503863 / 21967503863 / 5521967503863",
+        tk.Label(body,
+                 text="Aceita: 9xxxx-xxxx / 21 9xxxx-xxxx / +55 21 9xxxx-xxxx",
                  fg="#94a3b8", font=("Arial", 8)).pack(anchor="w", pady=(2, 0))
 
         self.lbl_status = tk.Label(body, text="", fg="#dc2626", font=("Arial", 9))
@@ -103,7 +104,7 @@ class IdentificacaoWindow:
 
         if len(num) < 12:
             self.lbl_status.config(
-                text="Número inválido. Digite DDD + número (ex: 21967503863)")
+                text="Número inválido. Digite DDD + número (ex: 21 9xxxx-xxxx)")
             return
 
         self.lbl_status.config(text="Buscando perfil...", fg="#2563eb")

@@ -429,133 +429,13 @@ class SettingsWindow:
         else:
             tab_nuvem = tk.Frame(notebook)  # não adicionado
 
-        tk.Label(
-            tab_nuvem,
-            text="Configurações de sincronização em nuvem (PocketBase) e notificações WhatsApp (Evolution API).",
-            anchor="w", fg="#475569", justify="left", wraplength=580,
-        ).pack(fill="x", padx=10, pady=(10, 6))
-
-        # PocketBase
-        pb_frame = tk.LabelFrame(tab_nuvem, text="PocketBase", padx=10, pady=8)
-        pb_frame.pack(fill="x", padx=10, pady=(0, 8))
-
-        campos_pb = [
-            ("URL:",   "pb_url",    "https://pocketbase-railway-production-336e.up.railway.app"),
-            ("Email:", "pb_email",  "wanderleyrayne@hotmail.com"),
-            ("Senha:", "pb_senha",  ""),
-        ]
-        self._nuvem_vars = {}
-        for label, chave, placeholder in campos_pb:
-            row = tk.Frame(pb_frame)
-            row.pack(fill="x", pady=2)
-            tk.Label(row, text=label, width=10, anchor="w").pack(side="left")
-            var = tk.StringVar(value=self._load_nuvem_config(chave, placeholder))
-            show = "*" if "senha" in chave.lower() else ""
-            ttk.Entry(row, textvariable=var, width=55, show=show).pack(side="left")
-            self._nuvem_vars[chave] = var
-
-        # Evolution API
-        evo_frame = tk.LabelFrame(tab_nuvem, text="Evolution API (WhatsApp)", padx=10, pady=8)
-        evo_frame.pack(fill="x", padx=10, pady=(0, 8))
-
-        campos_evo = [
-            ("URL:",      "evo_url",      "https://evolution-api-production-cd64.up.railway.app"),
-            ("API Key:",  "evo_key",      "magical_evo_2026"),
-            ("Instância:","evo_instancia","wanderley"),
-        ]
-        for label, chave, placeholder in campos_evo:
-            row = tk.Frame(evo_frame)
-            row.pack(fill="x", pady=2)
-            tk.Label(row, text=label, width=10, anchor="w").pack(side="left")
-            var = tk.StringVar(value=self._load_nuvem_config(chave, placeholder))
-            show = "*" if "key" in chave.lower() else ""
-            ttk.Entry(row, textvariable=var, width=55, show=show).pack(side="left")
-            self._nuvem_vars[chave] = var
-
-        # Destinos de notificação
-        dest_frame = tk.LabelFrame(tab_nuvem, text="Destinos de notificação", padx=10, pady=8)
-        dest_frame.pack(fill="x", padx=10, pady=(0, 8))
-
-        campos_dest = [
-            ("Wanderley:", "num_wanderley", "5521967503863@s.whatsapp.net"),
-            ("Michell:",   "num_michell",   ""),
-            ("Marcielo:",  "num_marcielo",  ""),
-            ("Grupo:",     "grupo_aprovacao","120363427344003548@g.us"),
-        ]
-        for label, chave, placeholder in campos_dest:
-            row = tk.Frame(dest_frame)
-            row.pack(fill="x", pady=2)
-            tk.Label(row, text=label, width=10, anchor="w").pack(side="left")
-            var = tk.StringVar(value=self._load_nuvem_config(chave, placeholder))
-            ttk.Entry(row, textvariable=var, width=55).pack(side="left")
-            self._nuvem_vars[chave] = var
-
-        # Perfil do usuário
-        perfil_frame = tk.LabelFrame(tab_nuvem, text="Meu perfil", padx=10, pady=8)
-        perfil_frame.pack(fill="x", padx=10, pady=(0, 8))
-
-        row = tk.Frame(perfil_frame)
-        row.pack(fill="x", pady=2)
-        tk.Label(row, text="Nome:", width=10, anchor="w").pack(side="left")
-        var_nome = tk.StringVar(value=self._load_nuvem_config("meu_nome", "Wanderley"))
-        ttk.Entry(row, textvariable=var_nome, width=30).pack(side="left")
-        self._nuvem_vars["meu_nome"] = var_nome
-
-        row2 = tk.Frame(perfil_frame)
-        row2.pack(fill="x", pady=2)
-        tk.Label(row2, text="Perfil:", width=10, anchor="w").pack(side="left")
-        var_perfil = tk.StringVar(value=self._load_nuvem_config("meu_perfil", "financeiro_ti"))
-
-        # Perfil só editável pelo financeiro_ti (Wanderley/TI)
-        # Michell e Marcielo não podem alterar o próprio perfil
-        perfil_state = "readonly" if meu_perfil_cfg == "financeiro_ti" else "disabled"
-        cb_perfil = ttk.Combobox(row2, textvariable=var_perfil, width=28,
-                                  state=perfil_state,
-                                  values=["financeiro_ti", "operacional_erp", "financeiro_cnab"])
-        cb_perfil.pack(side="left")
-
-        if meu_perfil_cfg != "financeiro_ti":
-            tk.Label(row2, text="🔒 Definido pelo administrador",
-                     fg="#94a3b8", font=("Arial", 8)).pack(side="left", padx=6)
-
-        self._nuvem_vars["meu_perfil"] = var_perfil
-
-        # Grupos WhatsApp por casa
-        grupos_frame = tk.LabelFrame(tab_nuvem, text="Grupos WhatsApp por Casa",
-                                      padx=10, pady=8)
-        grupos_frame.pack(fill="x", padx=10, pady=(0, 8))
-
-        tk.Label(grupos_frame,
-                 text="ID do grupo no formato: 120363xxxxxxxx@g.us\n"
-                      "Use o script listar_grupos.py para obter os IDs.",
-                 fg="#64748b", font=("Arial", 8), justify="left"
-                 ).pack(anchor="w", pady=(0, 6))
-
-        self._grupo_vars = {}
-        grupos_grid = tk.Frame(grupos_frame)
-        grupos_grid.pack(fill="x")
-
-        for i, p in enumerate(PARTNERS):
-            nome = p["partner_name"]
-            col  = (i % 2) * 3
-            row  = i // 2
-            tk.Label(grupos_grid, text=f"{nome}:",
-                     width=14, anchor="e").grid(
-                row=row, column=col, sticky="e", padx=(0, 4), pady=2)
-            var = tk.StringVar(
-                value=self._load_nuvem_config(f"grupo_{nome.lower().replace(' ','_')}", ""))
-            ttk.Entry(grupos_grid, textvariable=var, width=35).grid(
-                row=row, column=col+1, sticky="w", padx=(0, 20), pady=2)
-            self._grupo_vars[nome] = var
-
-        # Botões
-        btn_frame = tk.Frame(tab_nuvem)
-        btn_frame.pack(fill="x", padx=10, pady=8)
+        # ── Botões FIXOS no topo — sempre visíveis ────────────────────────────
+        btn_frame_top = tk.Frame(tab_nuvem, bg="#f1f5f9", pady=6, relief="ridge", bd=1)
+        btn_frame_top.pack(fill="x", side="bottom")
 
         def _salvar_nuvem():
             for chave, var in self._nuvem_vars.items():
                 self._save_nuvem_config(chave, var.get().strip())
-            # Salva grupos das casas
             if hasattr(self, '_grupo_vars'):
                 for nome, var in self._grupo_vars.items():
                     chave_grupo = f"grupo_{nome.lower().replace(' ','_')}"
@@ -600,11 +480,160 @@ class SettingsWindow:
             except Exception as e:
                 messagebox.showerror("WhatsApp", f"Erro: {e}", parent=self.top)
 
-        ttk.Button(btn_frame, text="💾 Salvar", command=_salvar_nuvem).pack(side="left")
-        ttk.Button(btn_frame, text="🔌 Testar PocketBase",
-                   command=_testar_nuvem).pack(side="left", padx=8)
-        ttk.Button(btn_frame, text="📱 Testar WhatsApp",
-                   command=_testar_whatsapp).pack(side="left")
+        bf = tk.Frame(btn_frame_top, bg="#f1f5f9")
+        bf.pack(pady=4)
+        ttk.Button(bf, text="💾 Salvar",           command=_salvar_nuvem).pack(side="left", padx=6)
+        ttk.Button(bf, text="🔌 Testar PocketBase", command=_testar_nuvem).pack(side="left", padx=6)
+        ttk.Button(bf, text="📱 Testar WhatsApp",   command=_testar_whatsapp).pack(side="left", padx=6)
+
+        # ── Conteúdo rolável ──────────────────────────────────────────────────
+        from tkinter import scrolledtext
+        canvas    = tk.Canvas(tab_nuvem, borderwidth=0, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(tab_nuvem, orient="vertical", command=canvas.yview)
+        scroll_frame = tk.Frame(canvas)
+
+        scroll_frame.bind("<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # Mouse wheel
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
+        tk.Label(
+            scroll_frame,
+            text="Configurações de sincronização em nuvem e notificações WhatsApp.",
+            anchor="w", fg="#475569", justify="left", wraplength=580,
+        ).pack(fill="x", padx=10, pady=(10, 6))
+
+        # PocketBase
+        pb_frame = tk.LabelFrame(scroll_frame, text="PocketBase", padx=10, pady=8)
+        pb_frame.pack(fill="x", padx=10, pady=(0, 6))
+        campos_pb = [
+            ("URL:",   "pb_url",   "https://pocketbase-railway-production-336e.up.railway.app"),
+            ("Email:", "pb_email", "wanderleyrayne@hotmail.com"),
+            ("Senha:", "pb_senha", ""),
+        ]
+        self._nuvem_vars = {}
+        for label, chave, placeholder in campos_pb:
+            row = tk.Frame(pb_frame)
+            row.pack(fill="x", pady=2)
+            tk.Label(row, text=label, width=10, anchor="w").pack(side="left")
+            var = tk.StringVar(value=self._load_nuvem_config(chave, placeholder))
+            show = "*" if "senha" in chave.lower() else ""
+            ttk.Entry(row, textvariable=var, width=55, show=show).pack(side="left")
+            self._nuvem_vars[chave] = var
+
+        # Evolution API
+        evo_frame = tk.LabelFrame(scroll_frame, text="Evolution API (WhatsApp)", padx=10, pady=8)
+        evo_frame.pack(fill="x", padx=10, pady=(0, 6))
+        campos_evo = [
+            ("URL:",       "evo_url",       "https://evolution-api-production-cd64.up.railway.app"),
+            ("API Key:",   "evo_key",       "magical_evo_2026"),
+            ("Instância:", "evo_instancia", "wanderley"),
+        ]
+        for label, chave, placeholder in campos_evo:
+            row = tk.Frame(evo_frame)
+            row.pack(fill="x", pady=2)
+            tk.Label(row, text=label, width=10, anchor="w").pack(side="left")
+            var = tk.StringVar(value=self._load_nuvem_config(chave, placeholder))
+            show = "*" if "key" in chave.lower() else ""
+            ttk.Entry(row, textvariable=var, width=55, show=show).pack(side="left")
+            self._nuvem_vars[chave] = var
+
+        # Destinos de notificação
+        dest_frame = tk.LabelFrame(scroll_frame, text="Destinos de notificação", padx=10, pady=8)
+        dest_frame.pack(fill="x", padx=10, pady=(0, 6))
+        campos_dest = [
+            ("Wanderley:", "num_wanderley",  ""),
+            ("Michell:",   "num_michell",    ""),
+            ("Marcielo:",  "num_marcielo",   ""),
+            ("Grupo Dir:", "grupo_aprovacao",""),
+        ]
+        for label, chave, placeholder in campos_dest:
+            row = tk.Frame(dest_frame)
+            row.pack(fill="x", pady=2)
+            tk.Label(row, text=label, width=10, anchor="w").pack(side="left")
+            var = tk.StringVar(value=self._load_nuvem_config(chave, placeholder))
+            ttk.Entry(row, textvariable=var, width=55).pack(side="left")
+            self._nuvem_vars[chave] = var
+
+        # Perfil do usuário
+        perfil_frame = tk.LabelFrame(scroll_frame, text="Meu perfil", padx=10, pady=8)
+        perfil_frame.pack(fill="x", padx=10, pady=(0, 6))
+
+        row = tk.Frame(perfil_frame)
+        row.pack(fill="x", pady=2)
+        tk.Label(row, text="Nome:", width=10, anchor="w").pack(side="left")
+        var_nome = tk.StringVar(value=self._load_nuvem_config("meu_nome", ""))
+        ttk.Entry(row, textvariable=var_nome, width=30).pack(side="left")
+        self._nuvem_vars["meu_nome"] = var_nome
+
+        row2 = tk.Frame(perfil_frame)
+        row2.pack(fill="x", pady=2)
+        tk.Label(row2, text="Perfil:", width=10, anchor="w").pack(side="left")
+        var_perfil = tk.StringVar(value=self._load_nuvem_config("meu_perfil", "financeiro_ti"))
+        perfil_state = "readonly" if meu_perfil_cfg == "financeiro_ti" else "disabled"
+        cb_perfil = ttk.Combobox(row2, textvariable=var_perfil, width=28,
+                                  state=perfil_state,
+                                  values=["financeiro_ti", "operacional_erp", "financeiro_cnab"])
+        cb_perfil.pack(side="left")
+        if meu_perfil_cfg != "financeiro_ti":
+            tk.Label(row2, text="🔒 Definido pelo administrador",
+                     fg="#94a3b8", font=("Arial", 8)).pack(side="left", padx=6)
+        self._nuvem_vars["meu_perfil"] = var_perfil
+
+        # ── Grupos das casas — seção expansível ───────────────────────────────
+        self._grupos_expandido = tk.BooleanVar(value=False)
+
+        def _toggle_grupos():
+            if self._grupos_expandido.get():
+                grupos_content.pack(fill="x", padx=4, pady=(0, 4))
+                btn_toggle.config(text="▲ Grupos WhatsApp por Casa")
+            else:
+                grupos_content.pack_forget()
+                btn_toggle.config(text="▼ Grupos WhatsApp por Casa")
+
+        grupos_outer = tk.Frame(scroll_frame, relief="groove", bd=1)
+        grupos_outer.pack(fill="x", padx=10, pady=(0, 6))
+
+        btn_toggle = tk.Button(
+            grupos_outer,
+            text="▼ Grupos WhatsApp por Casa",
+            anchor="w", relief="flat", bg="#f8fafc",
+            fg="#1e293b", font=("Arial", 9, "bold"),
+            command=lambda: [
+                self._grupos_expandido.set(not self._grupos_expandido.get()),
+                _toggle_grupos()
+            ]
+        )
+        btn_toggle.pack(fill="x", padx=6, pady=4)
+
+        grupos_content = tk.Frame(grupos_outer, padx=6, pady=4)
+
+        tk.Label(grupos_content,
+                 text="ID do grupo: 120363xxxxxxxx@g.us  — ",
+                 fg="#64748b", font=("Arial", 8)).pack(anchor="w", pady=(0, 4))
+
+        self._grupo_vars = {}
+        grupos_grid = tk.Frame(grupos_content)
+        grupos_grid.pack(fill="x")
+        for i, p in enumerate(PARTNERS):
+            nome = p["partner_name"]
+            col  = (i % 2) * 3
+            r    = i // 2
+            tk.Label(grupos_grid, text=f"{nome}:", width=14, anchor="e").grid(
+                row=r, column=col, sticky="e", padx=(0, 4), pady=2)
+            var = tk.StringVar(
+                value=self._load_nuvem_config(f"grupo_{nome.lower().replace(' ','_')}", ""))
+            ttk.Entry(grupos_grid, textvariable=var, width=33).grid(
+                row=r, column=col+1, sticky="w", padx=(0, 16), pady=2)
+            self._grupo_vars[nome] = var
 
         tk.Label(
             tab_backup,
