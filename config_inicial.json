@@ -1,0 +1,13 @@
+{
+    "pb_url":          "https://pocketbase-railway-production-336e.up.railway.app",
+    "pb_email":        "wanderleyrayne@hotmail.com",
+    "pb_senha":        "Tito@2017",
+    "evo_url":         "https://evolution-api-production-cd64.up.railway.app",
+    "evo_key":         "magical_evo_2026",
+    "evo_instancia":   "wanderley",
+    "num_wanderley":   "5521967503863@s.whatsapp.net",
+    "num_michell":     "5521979694752@s.whatsapp.net",
+    "num_marcielo":    "5521965801974@s.whatsapp.net",
+    "grupo_aprovacao": "120363427344003548@g.us",
+    "polling_intervalo": "60"
+}
