@@ -1,62 +1,121 @@
 """
-teste_upload_planilha.py — Testa upload de planilha para o PocketBase
-Execute: python teste_upload_planilha.py
+teste_upload_planilha.py — Sobe uma planilha de teste para o PocketBase
+Execute da raiz ou da pasta scripts: python teste_upload_planilha.py
 """
 import sqlite3
+import requests
+import os
 from pathlib import Path
-from tkinter.filedialog import askopenfilename
-import tkinter as tk
 
-DB_PATH = Path("data") / "conciliacao.db"
+# Tenta encontrar o banco em varios lugares
+POSSIVEIS_DB = [
+    Path(__file__).parent.parent / "data" / "conciliacao.db",  # raiz/data/
+    Path(os.environ.get("APPDATA","")) / "Magical_Conciliacao" / "data" / "conciliacao.db",
+    Path(__file__).parent / "data" / "conciliacao.db",
+]
+
+DB_PATH = None
+for p in POSSIVEIS_DB:
+    if p.exists():
+        DB_PATH = p
+        print(f"Banco encontrado: {p}")
+        break
+
+if not DB_PATH:
+    print("Banco nao encontrado. Caminhos tentados:")
+    for p in POSSIVEIS_DB:
+        print(f"  {p}")
+    exit(1)
 
 def get_cfg(chave, default=""):
     with sqlite3.connect(str(DB_PATH)) as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS nuvem_config "
+                     "(chave TEXT PRIMARY KEY, valor TEXT)")
         row = conn.execute(
-            "SELECT valor FROM nuvem_config WHERE chave=? LIMIT 1", (chave,)
-        ).fetchone()
+            "SELECT valor FROM nuvem_config WHERE chave=? LIMIT 1",
+            (chave,)).fetchone()
         return row[0] if row and row[0] else default
 
 pb_url   = get_cfg("pb_url")
 pb_email = get_cfg("pb_email")
 pb_senha = get_cfg("pb_senha")
 
-# Seleciona arquivo via dialogo
+print(f"PB URL: {pb_url}")
+
+if not pb_url:
+    print("ERRO: pb_url nao configurado no banco!")
+    exit(1)
+
+# Autentica
+resp = requests.post(
+    f"{pb_url}/api/collections/_superusers/auth-with-password",
+    json={"identity": pb_email, "password": pb_senha},
+    timeout=20,
+)
+token   = resp.json()["token"]
+headers = {"Authorization": f"Bearer {token}"}
+print("Login PocketBase OK\n")
+
+# Escolhe arquivo para upload
+import tkinter as tk
+from tkinter import filedialog
 root = tk.Tk()
 root.withdraw()
-arquivo_path = askopenfilename(
-    title="Selecione a planilha para enviar",
+arquivo = filedialog.askopenfilename(
+    title="Selecione a planilha para upload",
     filetypes=[("Excel", "*.xlsx *.xls"), ("Todos", "*.*")]
 )
 root.destroy()
 
-if not arquivo_path:
+if not arquivo:
     print("Nenhum arquivo selecionado.")
-    exit()
+    exit(0)
 
-print(f"Arquivo: {arquivo_path}")
-nome = Path(arquivo_path).name
+print(f"Arquivo: {arquivo}")
 
-from cloud_sync import CloudSync
-cs = CloudSync(pb_url, pb_email, pb_senha)
+# Casa
+casas = [
+    "CONTEMPORANEO","ESPACO SER","EVORA","LAGO","CHALE",
+    "CHATEAU","CASA DO LAGO","VILLA FONTANA","OLEGARIO","MAGICAL","TESTE","TESTE2"
+]
+print("\nEscolha a casa:")
+for i, c in enumerate(casas, 1):
+    print(f"  {i}. {c}")
+idx = int(input("Numero: ")) - 1
+casa = casas[idx]
 
-print("\n1. Salvando no PocketBase com upload...")
-pid = cs.salvar_planilha_recebida(
-    casa         = "CHATEAU",
-    nome_arquivo = nome,
-    enviado_por  = "Gerente Chateau",
-    total_itens  = 10,
-    valor_total  = 35966.55,
-    arquivo_path = arquivo_path,
+from datetime import datetime
+agora = datetime.now().strftime("%d/%m/%Y %H:%M")
+
+# Cria registro
+resp2 = requests.post(
+    f"{pb_url}/api/collections/planilhas/records",
+    headers={**headers, "Content-Type": "application/json"},
+    json={
+        "casa":         casa,
+        "nome_arquivo": Path(arquivo).name,
+        "enviado_por":  "Teste Manual",
+        "total_itens":  0,
+        "total_valor":  0,
+        "status":       "recebido",
+        "recebido_em":  agora,
+    },
+    timeout=20,
 )
-print(f"   ID: {pid}")
+pid = resp2.json().get("id")
+print(f"\nRegistro criado: {pid}")
 
-if pid:
-    print("\n2. Testando download...")
-    import tempfile, os
-    destino = os.path.join(tempfile.gettempdir(), "magical_test")
-    caminho = cs.download_arquivo(pid, destino)
-    print(f"   Baixado em: {caminho}")
+# Upload do arquivo
+with open(arquivo, "rb") as f:
+    conteudo = f.read()
 
-    print("\nOK! Agora abra Pendencias e clique em 'Assumir lancamento ERP'")
-else:
-    print("ERRO ao salvar planilha")
+resp3 = requests.patch(
+    f"{pb_url}/api/collections/planilhas/records/{pid}",
+    headers={"Authorization": f"Bearer {token}"},
+    files={"arquivo": (Path(arquivo).name, conteudo,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    timeout=60,
+)
+print(f"Upload: {'OK' if resp3.status_code in (200,201) else 'ERRO ' + str(resp3.status_code)}")
+print(f"\nPlanilha '{Path(arquivo).name}' enviada para casa '{casa}'!")
+print(f"Acesse o Workflow no sistema para ver o card.")
