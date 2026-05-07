@@ -3,7 +3,7 @@ from PyInstaller.utils.hooks import collect_data_files
 from PyInstaller.utils.hooks import collect_submodules
 
 datas = [('assets', 'assets'), ('core', 'core'), ('database', 'database'), ('ui', 'ui'), ('utils', 'utils')]
-hiddenimports = ['openpyxl', 'et_xmlfile', 'openpyxl.cell._writer', 'rapidfuzz', 'rapidfuzz.fuzz', 'rapidfuzz.process', 'requests', 'numpy', 'numpy.core']
+hiddenimports = ['openpyxl', 'et_xmlfile', 'openpyxl.cell._writer', 'rapidfuzz', 'rapidfuzz.fuzz', 'rapidfuzz.process', 'requests', 'numpy', 'numpy.core', 'tkinter', 'tkinter.ttk', 'tkinter.messagebox', 'tkinter.filedialog', 'tkinter.scrolledtext']
 datas += collect_data_files('openpyxl')
 hiddenimports += collect_submodules('pandas')
 hiddenimports += collect_submodules('openpyxl')
@@ -28,13 +28,16 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
+    a.binaries,
+    a.datas,
     [],
-    exclude_binaries=True,
     name='Magical_Conciliacao',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -42,13 +45,4 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=['assets\\icon.ico'],
-)
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    name='Magical_Conciliacao',
 )

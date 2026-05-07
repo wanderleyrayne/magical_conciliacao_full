@@ -1,20 +1,19 @@
 @echo off
 REM ============================================================
-REM  BUILD — Magical Conciliação
-REM  Gera dist\Magical_Conciliacao.exe
+REM  BUILD Magical Conciliacao - arquivo unico (.exe)
 REM  Execute: build.bat
 REM ============================================================
 
 echo.
-echo  Magical Conciliacao — Build
+echo  Magical Conciliacao - Build
 echo ============================================================
 
-REM Limpa builds anteriores
 if exist build rmdir /s /q build
 if exist dist  rmdir /s /q dist
 
 pyinstaller ^
   --noconfirm ^
+  --onefile ^
   --windowed ^
   --name "Magical_Conciliacao" ^
   --icon=assets\icon.ico ^
@@ -23,6 +22,8 @@ pyinstaller ^
   --add-data "database;database" ^
   --add-data "ui;ui" ^
   --add-data "utils;utils" ^
+  --add-data "config_inicial.json;." ^
+  --add-data "setup_inicial.py;." ^
   --hidden-import openpyxl ^
   --hidden-import et_xmlfile ^
   --hidden-import openpyxl.cell._writer ^
@@ -32,6 +33,11 @@ pyinstaller ^
   --hidden-import requests ^
   --hidden-import numpy ^
   --hidden-import numpy.core ^
+  --hidden-import tkinter ^
+  --hidden-import tkinter.ttk ^
+  --hidden-import tkinter.messagebox ^
+  --hidden-import tkinter.filedialog ^
+  --hidden-import tkinter.scrolledtext ^
   --collect-submodules pandas ^
   --collect-submodules openpyxl ^
   --collect-submodules numpy ^
@@ -40,13 +46,12 @@ pyinstaller ^
 
 if %ERRORLEVEL% EQU 0 (
   echo.
-  echo  Build concluido com sucesso!
-  echo  Executavel: dist\Magical_Conciliacao\Magical_Conciliacao.exe
-  echo.
+  echo  Build concluido!
+  echo  Executavel: dist\Magical_Conciliacao.exe
+  dir dist\Magical_Conciliacao.exe | find "Magical"
 ) else (
   echo.
-  echo  ERRO no build. Verifique os logs acima.
-  echo.
+  echo  ERRO no build.
 )
 
 pause

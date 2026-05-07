@@ -6,10 +6,17 @@ from ui.main_window import MainWindow
 
 
 def main():
+    # Aplica config_inicial.json na primeira execucao (sem precisar de Python instalado)
+    try:
+        from setup_inicial import aplicar_config_inicial
+        aplicar_config_inicial()
+    except Exception:
+        pass
+
     db_file = user_data_path("data", "conciliacao.db")
     DatabaseManager(str(db_file))
 
-    # Backup automático diário — antes de qualquer outra operação
+    # Backup automatico diario
     try:
         from backup import auto_backup
         auto_backup(label="auto")
@@ -23,13 +30,12 @@ def main():
     root = tk.Tk()
     MainWindow(root)
 
-    # Verifica atualizações silenciosamente 3 segundos após iniciar
-    # (silent=True → só mostra popup se tiver versão nova)
+    # Verifica atualizacoes silenciosamente 3 segundos apos iniciar
     try:
         from updater import check_for_updates
         root.after(3000, lambda: check_for_updates(root, silent=True))
     except Exception:
-        pass  # updater indisponível não impede o sistema de funcionar
+        pass
 
     root.mainloop()
 
