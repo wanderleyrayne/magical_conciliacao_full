@@ -1538,31 +1538,59 @@ class ReconciliationDetailWindow:
         if rows_banco and not rows_erp:
             search_hint = self.search_var.get().strip().upper() if hasattr(self, "search_var") else ""
 
-            # ── Caso normal: 1 banco → N ERP ──────────────────────────────
-            if len(rows_banco) == 1:
-                val_b  = abs(float(rows_banco[0][1].get("valor_banco") or 0))
-                fav_b  = str(rows_banco[0][1].get("favorecido_banco") or "")
-                desc_b = str(rows_banco[0][1].get("descricao_banco") or "")
-                data_b = str(rows_banco[0][1].get("data_banco") or "")[:10]
-                doc_b  = str(rows_banco[0][1].get("documento_banco") or "")
+            # Mostra loading enquanto busca sugestoes em background
+            import threading as _t, queue as _q
+            _result_q = _q.Queue()
 
-                sugestoes = _find_suggestions(val_b, fav_b, desc_b, data_b, doc_b, search_hint)
-                if not sugestoes and search_hint:
-                    sugestoes = _find_suggestions(val_b, fav_b, desc_b, data_b, doc_b, "")
+            lbl_loading = tk.Label(body, text="Buscando sugestoes...",
+                                    fg="#2563eb", font=("Arial", 9, "italic"))
+            lbl_loading.pack(anchor="w", pady=4)
+            win.update_idletasks()
 
-            # ── Caso inverso: N banco → 1 ERP ─────────────────────────────
-            else:
-                soma_banco = round(sum(
-                    abs(float(r.get("valor_banco") or 0)) for _, r in rows_banco
-                ), 2)
-                fav_b  = str(rows_banco[0][1].get("favorecido_banco") or "")
-                data_b = str(rows_banco[0][1].get("data_banco") or "")[:10]
-                doc_b  = str(rows_banco[0][1].get("documento_banco") or "")
+            def _buscar_bg():
+                try:
+                    if len(rows_banco) == 1:
+                        val_b  = abs(float(rows_banco[0][1].get("valor_banco") or 0))
+                        fav_b  = str(rows_banco[0][1].get("favorecido_banco") or "")
+                        desc_b = str(rows_banco[0][1].get("descricao_banco") or "")
+                        data_b = str(rows_banco[0][1].get("data_banco") or "")[:10]
+                        doc_b  = str(rows_banco[0][1].get("documento_banco") or "")
+                        sugs = _find_suggestions(val_b, fav_b, desc_b, data_b, doc_b, search_hint)
+                        if not sugs and search_hint:
+                            sugs = _find_suggestions(val_b, fav_b, desc_b, data_b, doc_b, "")
+                    else:
+                        soma_banco_bg = round(sum(
+                            abs(float(r.get("valor_banco") or 0)) for _, r in rows_banco), 2)
+                        fav_b  = str(rows_banco[0][1].get("favorecido_banco") or "")
+                        data_b = str(rows_banco[0][1].get("data_banco") or "")[:10]
+                        doc_b  = str(rows_banco[0][1].get("documento_banco") or "")
+                        sugs = _find_suggestions_inverso(soma_banco_bg, fav_b, data_b, doc_b, search_hint)
+                    _result_q.put(sugs)
+                except Exception:
+                    _result_q.put([])
 
-                sugestoes = _find_suggestions_inverso(
-                    soma_banco, fav_b, data_b, doc_b, search_hint)
+            _t.Thread(target=_buscar_bg, daemon=True).start()
 
-            if sugestoes:
+            def _poll_sugestoes():
+                try:
+                    sugestoes = _result_q.get_nowait()
+                except _q.Empty:
+                    if win.winfo_exists():
+                        win.after(200, _poll_sugestoes)
+                    return
+                try:
+                    lbl_loading.destroy()
+                except Exception:
+                    pass
+                if not sugestoes or not win.winfo_exists():
+                    return
+                _mostrar_sugestoes(sugestoes)
+
+            def _mostrar_sugestoes(sugestoes):
+                if not win.winfo_exists():
+                    return
+                val_b = abs(float(rows_banco[0][1].get("valor_banco") or 0)) if len(rows_banco) == 1 else round(sum(abs(float(r.get("valor_banco") or 0)) for _, r in rows_banco), 2)
+                soma_banco = val_b
                 sug_outer = tk.Frame(erp_lf, bg="#f0fdf4", padx=8, pady=6,
                                       relief="flat")
                 sug_outer.pack(fill="x", side="bottom", pady=(4, 0))

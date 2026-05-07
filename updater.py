@@ -1,369 +1,231 @@
 """
-updater.py — Auto-updater via GitHub Releases.
+updater.py — Verificador e instalador de atualizacoes do Magical Conciliacao.
 
-Fluxo:
-  1. Na inicialização, verifica a versão mais recente no GitHub
-  2. Se há versão nova, exibe popup perguntando se quer atualizar
-  3. Se confirmar, baixa o novo .exe com barra de progresso
-  4. Substitui o executável atual e reinicia o programa
-  5. Tudo roda em thread separada para não travar a UI
-
-Configuração:
-  - GITHUB_REPO em version.py: "usuario/repositorio"
-  - O release no GitHub deve ter um asset chamado "Magical_Conciliacao.exe"
-  - Para repositório privado: defina GITHUB_TOKEN abaixo
-
-Publicar um release no GitHub:
-  1. git tag v3.2.0
-  2. git push origin v3.2.0
-  3. No GitHub: Releases → Draft new release → escolhe a tag → 
-     faz upload do .exe gerado pelo build.bat → Publish release
+Melhorias v2:
+- SSL tolerante (proxy corporativo, antivirus)
+- Timeout configuravel
+- Download com barra de progresso
+- Cancelamento de download
+- Sem travar UI (thread separada)
+- Mensagem clara em caso de erro com alternativas
 """
 
 import os
 import sys
-import json
-import shutil
-import tempfile
 import threading
-import subprocess
 import tkinter as tk
 from tkinter import ttk, messagebox
 from pathlib import Path
+import logging
 
-from version import APP_VERSION, APP_NAME, GITHUB_REPO
+log = logging.getLogger("magical_conciliacao")
 
-# Token GitHub para repositório privado
-# Cole seu token aqui: ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-# Gere em: github.com → Settings → Developer settings → Personal access tokens → Tokens (classic)
-GITHUB_TOKEN = ""  # ← coloque seu token aqui
-
-# Nome do asset no release do GitHub
-ASSET_NAME = "Magical_Conciliacao.exe"
-
-# URL base da API do GitHub
-GITHUB_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+GITHUB_REPO    = "wanderleyrayne/magical_conciliacao_full"
+GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+TIMEOUT_CHECK  = 10
+TIMEOUT_DOWN   = 120
 
 
-def _parse_version(v: str) -> tuple:
-    """Converte "3.2.1" → (3, 2, 1) para comparação."""
-    v = v.lstrip("vV").strip()
+def _versao_tuple(v: str) -> tuple:
     try:
-        return tuple(int(x) for x in v.split("."))
+        return tuple(int(x) for x in str(v).lstrip("vV").split(".")[:3])
     except Exception:
         return (0, 0, 0)
 
 
-def _get_latest_release() -> dict | None:
-    """
-    Consulta a API do GitHub e retorna info do release mais recente.
-    Retorna None em caso de erro.
-    """
+def verificar_atualizacao(versao_atual: str) -> dict:
+    import urllib.request, urllib.error, json, ssl
+
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode    = ssl.CERT_NONE
+
+    headers = {
+        "User-Agent": "MagicalConciliacao-Updater/2.0",
+        "Accept":     "application/vnd.github.v3+json",
+    }
+
     try:
-        import requests as _req
-        headers = {"Accept": "application/vnd.github+json"}
-        if GITHUB_TOKEN:
-            headers["Authorization"] = f"Bearer {GITHUB_TOKEN}"
-
-        resp = _req.get(GITHUB_API, headers=headers, timeout=8)
-        if resp.status_code != 200:
-            return None
-
-        data = resp.json()
-        tag     = data.get("tag_name", "")
-        version = tag.lstrip("vV")
-        body    = data.get("body", "")   # notas da versão
-
-        # Busca o asset .exe — usa URL da API (funciona em repos privados)
-        asset_url = None
-        for asset in data.get("assets", []):
-            if asset.get("name") == ASSET_NAME:
-                # asset["url"] = API endpoint — suporta autenticação
-                # asset["browser_download_url"] = link direto — falha em repos privados
-                asset_url = asset.get("url")
-                break
-
-        return {
-            "version":   version,
-            "tag":       tag,
-            "notes":     body,
-            "asset_url": asset_url,
-        }
-    except Exception:
+        req  = urllib.request.Request(GITHUB_API_URL, headers=headers)
+        resp = urllib.request.urlopen(req, timeout=TIMEOUT_CHECK, context=ctx)
+        data = json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        log.warning(f"[UPDATER] Erro ao verificar: {e}")
         return None
 
+    versao_nova = data.get("tag_name", "").lstrip("vV")
+    if not versao_nova:
+        return None
 
-def _is_frozen() -> bool:
-    """Retorna True se rodando como .exe (PyInstaller)."""
-    return getattr(sys, "frozen", False)
+    if _versao_tuple(versao_nova) <= _versao_tuple(versao_atual):
+        return None
+
+    for asset in data.get("assets", []):
+        if asset.get("name", "").lower().endswith(".exe"):
+            return {
+                "versao": versao_nova,
+                "url":    asset["browser_download_url"],
+                "nome":   asset["name"],
+                "notas":  data.get("body", "")[:500],
+            }
+    return None
 
 
-def _current_exe() -> Path:
-    """Caminho do executável atual."""
-    if _is_frozen():
-        return Path(sys.executable)
-    return Path(sys.argv[0])
+def baixar_atualizacao(url, nome, progress_cb=None, cancel_event=None):
+    import urllib.request, ssl
 
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode    = ssl.CERT_NONE
 
-def _download_and_replace(asset_url: str, progress_cb=None) -> bool:
-    """
-    Baixa o novo .exe e substitui o atual.
-    progress_cb(pct: int) — callback de progresso 0-100.
-    Retorna True se bem-sucedido.
-    """
+    destino = Path.home() / "Downloads" / nome
+
     try:
-        import requests as _req
-        headers = {
-            "Accept":               "application/octet-stream",
-            "X-GitHub-Api-Version": "2022-11-28",
-        }
-        if GITHUB_TOKEN:
-            headers["Authorization"] = f"Bearer {GITHUB_TOKEN}"
+        req  = urllib.request.Request(url, headers={"User-Agent": "MagicalConciliacao-Updater/2.0"})
+        resp = urllib.request.urlopen(req, timeout=TIMEOUT_DOWN, context=ctx)
+        total   = int(resp.headers.get("Content-Length", 0))
+        baixado = 0
 
-        resp = _req.get(asset_url, headers=headers,
-                        stream=True, timeout=120, allow_redirects=True)
-        if resp.status_code not in (200, 302):
-            return False
-
-        total = int(resp.headers.get("content-length", 0))
-        downloaded = 0
-
-        # Salva em arquivo temporário
-        tmp = tempfile.NamedTemporaryFile(
-            suffix=".exe", delete=False,
-            dir=_current_exe().parent
-        )
-        for chunk in resp.iter_content(chunk_size=8192):
-            if chunk:
-                tmp.write(chunk)
-                downloaded += len(chunk)
-                if total and progress_cb:
-                    progress_cb(int(downloaded / total * 100))
-
-        tmp.close()
-        tmp_path = Path(tmp.name)
+        with open(destino, "wb") as f:
+            while True:
+                if cancel_event and cancel_event.is_set():
+                    destino.unlink(missing_ok=True)
+                    return None
+                bloco = resp.read(65536)
+                if not bloco:
+                    break
+                f.write(bloco)
+                baixado += len(bloco)
+                if total > 0 and progress_cb:
+                    progress_cb(int(baixado * 100 / total))
 
         if progress_cb:
             progress_cb(100)
+        return destino
 
-        current = _current_exe()
-
-        if _is_frozen():
-            # Renomeia o atual para .old e coloca o novo no lugar
-            old_path = current.with_suffix(".old")
-            if old_path.exists():
-                old_path.unlink()
-            current.rename(old_path)
-            shutil.move(str(tmp_path), str(current))
-        else:
-            # Modo desenvolvimento — apenas copia
-            shutil.move(str(tmp_path), str(current.parent / ASSET_NAME))
-
-        return True
-
-    except Exception as exc:
-        print(f"[updater] Erro no download: {exc}")
-        return False
+    except Exception as e:
+        log.error(f"[UPDATER] Erro no download: {e}")
+        if destino.exists():
+            destino.unlink(missing_ok=True)
+        return None
 
 
-def _restart():
-    """Reinicia o executável atual."""
-    exe = str(_current_exe())
-    if _is_frozen():
-        subprocess.Popen([exe])
-    sys.exit(0)
+class UpdaterDialog:
+    def __init__(self, master, versao_atual, info, on_close=None):
+        self.master       = master
+        self.versao_atual = versao_atual
+        self.info         = info
+        self.on_close     = on_close
+        self._cancel      = threading.Event()
 
-
-# =============================================================================
-# POPUP DE ATUALIZAÇÃO
-# =============================================================================
-
-class UpdateDialog:
-    """
-    Janela de atualização com:
-    - Versão atual × nova
-    - Notas da versão (changelog)
-    - Barra de progresso do download
-    - Botões Atualizar agora / Lembrar depois
-    """
-
-    def __init__(self, parent, release_info: dict):
-        self.release  = release_info
-        self.win      = tk.Toplevel(parent)
-        self.win.title("Atualização disponível")
-        self.win.geometry("520x380")
+        self.win = tk.Toplevel(master)
+        self.win.title("Atualizacao disponivel")
+        self.win.geometry("480x340")
         self.win.resizable(False, False)
         self.win.grab_set()
+        self.win.protocol("WM_DELETE_WINDOW", self._fechar)
         self._build()
 
     def _build(self):
-        win = self.win
-        r   = self.release
-
-        # Header
-        hdr = tk.Frame(win, bg="#1e293b")
+        hdr = tk.Frame(self.win, bg="#1e293b", pady=14)
         hdr.pack(fill="x")
-        tk.Label(hdr, text="🚀  Nova versão disponível",
-                 fg="white", bg="#1e293b",
-                 font=("Arial", 11, "bold")).pack(side="left", padx=12, pady=10)
+        tk.Label(hdr, text="Nova versao disponivel!",
+                 bg="#1e293b", fg="white",
+                 font=("Arial", 13, "bold")).pack()
+        tk.Label(hdr, text=f"v{self.versao_atual}  ->  v{self.info['versao']}",
+                 bg="#1e293b", fg="#94a3b8", font=("Arial", 10)).pack(pady=(2,0))
 
-        body = tk.Frame(win, padx=20, pady=12)
+        body = tk.Frame(self.win, padx=20, pady=12)
         body.pack(fill="both", expand=True)
 
-        # Versões
-        ver_f = tk.Frame(body, bg="#f8fafc", padx=12, pady=8)
-        ver_f.pack(fill="x", pady=(0, 10))
-        tk.Label(ver_f, text=f"Versão atual:  {APP_VERSION}",
-                 font=("Arial", 10), bg="#f8fafc",
-                 fg="#64748b", anchor="w").pack(fill="x")
-        tk.Label(ver_f, text=f"Nova versão:   {r['version']}",
-                 font=("Arial", 10, "bold"), bg="#f8fafc",
-                 fg="#166534", anchor="w").pack(fill="x")
-
-        # Notas da versão
-        if r.get("notes"):
-            tk.Label(body, text="O que há de novo:",
-                     font=("Arial", 9, "bold"),
-                     fg="#475569", anchor="w").pack(fill="x", pady=(0, 4))
-
-            txt_f = tk.Frame(body)
-            txt_f.pack(fill="both", expand=True, pady=(0, 10))
-            txt = tk.Text(txt_f, height=8, wrap="word",
-                          font=("Arial", 9),
-                          bg="#f8fafc", relief="flat", bd=0)
-            sb = ttk.Scrollbar(txt_f, orient="vertical", command=txt.yview)
-            txt.configure(yscrollcommand=sb.set)
-            txt.pack(side="left", fill="both", expand=True)
-            sb.pack(side="right", fill="y")
-            txt.insert("1.0", r["notes"])
+        if self.info.get("notas"):
+            tk.Label(body, text="O que ha de novo:", font=("Arial", 9, "bold"), anchor="w").pack(fill="x")
+            txt = tk.Text(body, height=7, wrap="word", font=("Arial", 9),
+                          relief="flat", bg="#f8fafc", fg="#334155")
+            txt.pack(fill="both", expand=True, pady=(4, 10))
+            txt.insert("1.0", self.info["notas"])
             txt.config(state="disabled")
 
-        # Progresso (oculto até iniciar download)
-        self.progress_f = tk.Frame(body)
-        self.progress   = ttk.Progressbar(
-            self.progress_f, orient="horizontal",
-            length=460, mode="determinate")
-        self.progress.pack(fill="x")
-        self.progress_lbl = tk.Label(
-            self.progress_f, text="Baixando...",
-            font=("Arial", 8), fg="#475569", anchor="w")
-        self.progress_lbl.pack(fill="x", pady=(2, 0))
+        self.lbl = tk.Label(body, text="Pronto para baixar.", fg="#475569", font=("Arial", 9))
+        self.lbl.pack(anchor="w")
+        self.bar = ttk.Progressbar(body, length=440, mode="determinate")
+        self.bar.pack(fill="x", pady=(4, 0))
 
-        # Botões
-        btn_f = tk.Frame(win, padx=20, pady=10)
-        btn_f.pack(fill="x")
+        bf = tk.Frame(self.win, pady=12)
+        bf.pack()
+        self.btn = ttk.Button(bf, text="Baixar e instalar", command=self._baixar)
+        self.btn.pack(side="left", padx=8)
+        ttk.Button(bf, text="Agora nao", command=self._fechar).pack(side="left", padx=8)
 
-        self.btn_update = ttk.Button(
-            btn_f, text="Atualizar agora →",
-            command=self._start_update)
-        self.btn_update.pack(side="right", padx=(6, 0))
+    def _baixar(self):
+        self.btn.config(state="disabled")
+        self.lbl.config(text="Baixando...", fg="#2563eb")
+        self._cancel.clear()
 
-        ttk.Button(btn_f, text="Lembrar depois",
-                   command=win.destroy).pack(side="right")
+        def _run():
+            def _prog(p):
+                try:
+                    self.win.after(0, lambda pct=p: (
+                        self.bar.config(value=pct),
+                        self.lbl.config(text=f"Baixando... {pct}%")
+                    ))
+                except Exception:
+                    pass
 
-    def _start_update(self):
-        asset_url = self.release.get("asset_url")
-        if not asset_url:
-            messagebox.showerror(
-                "Erro",
-                "Arquivo de instalação não encontrado no release.\n"
-                "Faça o download manual em github.com/{GITHUB_REPO}.",
-                parent=self.win)
-            return
+            path = baixar_atualizacao(
+                self.info["url"], self.info["nome"],
+                progress_cb=_prog, cancel_event=self._cancel)
 
-        self.btn_update.config(state="disabled")
-        self.progress_f.pack(fill="x", pady=(0, 8))
-        self.win.update()
+            if path:
+                self.win.after(0, lambda p=path: self._ok(p))
+            else:
+                self.win.after(0, self._erro)
 
-        def _do_download():
-            # Faz backup do banco ANTES de qualquer atualização
-            try:
-                from backup import pre_update_backup
-                pre_update_backup()
-            except Exception:
-                pass
+        threading.Thread(target=_run, daemon=True).start()
 
-            try:
-                from logger import log as _log
-                from version import APP_VERSION
-                _log.atualizacao(APP_VERSION, self.release.get("version","?"), "iniciada")
-            except Exception:
-                pass
-            def _prog(pct):
-                self.win.after(0, lambda: (
-                    self.progress.config(value=pct),
-                    self.progress_lbl.config(
-                        text=f"Baixando... {pct}%")
-                ))
+    def _ok(self, path):
+        self.lbl.config(text=f"Salvo em: {path.parent}", fg="#166534")
+        self.bar.config(value=100)
+        if messagebox.askyesno("Download concluido",
+            f"Salvo em:\n{path}\n\nAbrir pasta Downloads?\n\n"
+            "Feche o sistema e execute o novo .exe para atualizar.",
+            parent=self.win):
+            import subprocess
+            subprocess.Popen(f'explorer "{path.parent}"')
+        self._fechar()
 
-            ok = _download_and_replace(asset_url, progress_cb=_prog)
+    def _erro(self):
+        self.lbl.config(text="Erro no download.", fg="#dc2626")
+        self.btn.config(state="normal")
+        messagebox.showerror("Erro no download",
+            "Nao foi possivel baixar automaticamente.\n\n"
+            "Alternativas:\n"
+            f"1. github.com/{GITHUB_REPO}/releases\n"
+            "2. Baixe o .exe manualmente\n"
+            "3. Verifique antivirus ou proxy da empresa",
+            parent=self.win)
 
-            def _finish():
-                if ok:
-                    try:
-                        from logger import log as _log
-                        from version import APP_VERSION
-                        _log.atualizacao(APP_VERSION, self.release.get("version","?"), "concluída")
-                    except Exception:
-                        pass
-                    self.progress_lbl.config(
-                        text="Download concluído! Reiniciando...",
-                        fg="#166534")
-                    self.win.after(1500, _restart)
-                else:
-                    try:
-                        from logger import log as _log
-                        from version import APP_VERSION
-                        _log.atualizacao(APP_VERSION, self.release.get("version","?"), "FALHOU")
-                    except Exception:
-                        pass
-                    messagebox.showerror(
-                        "Erro no download",
-                        "Não foi possível baixar a atualização.\n"
-                        f"Faça o download manual em:\n"
-                        f"github.com/{GITHUB_REPO}/releases",
-                        parent=self.win)
-                    self.btn_update.config(state="normal")
-                    self.progress_f.pack_forget()
-
-            self.win.after(0, _finish)
-
-        threading.Thread(target=_do_download, daemon=True).start()
+    def _fechar(self):
+        self._cancel.set()
+        if self.on_close:
+            self.on_close()
+        self.win.destroy()
 
 
-# =============================================================================
-# PONTO DE ENTRADA — chamado no main.py
-# =============================================================================
+def verificar_em_background(master, versao_atual, silencioso=True):
+    """Verifica atualizacao em background sem travar a UI."""
+    def _run():
+        info = verificar_atualizacao(versao_atual)
+        def _ui():
+            if info:
+                UpdaterDialog(master, versao_atual, info)
+            elif not silencioso:
+                messagebox.showinfo("Sem atualizacoes",
+                    f"Voce ja esta na versao mais recente ({versao_atual}).",
+                    parent=master)
+        try:
+            master.after(0, _ui)
+        except Exception:
+            pass
 
-def check_for_updates(parent_root, silent: bool = True):
-    """
-    Verifica atualizações em thread separada.
-
-    silent=True  → só mostra popup se tiver atualização (comportamento padrão)
-    silent=False → mostra sempre (para botão "Verificar atualizações" manual)
-    """
-    def _check():
-        release = _get_latest_release()
-
-        if release is None:
-            if not silent:
-                parent_root.after(0, lambda: messagebox.showinfo(
-                    "Verificação de atualizações",
-                    "Não foi possível conectar ao servidor.\n"
-                    "Verifique sua conexão com a internet.",
-                    parent=parent_root))
-            return
-
-        latest  = _parse_version(release["version"])
-        current = _parse_version(APP_VERSION)
-
-        if latest > current:
-            parent_root.after(
-                0, lambda: UpdateDialog(parent_root, release))
-        elif not silent:
-            parent_root.after(0, lambda: messagebox.showinfo(
-                "Verificação de atualizações",
-                f"{APP_NAME} está atualizado!\n\nVersão atual: {APP_VERSION}",
-                parent=parent_root))
-
-    threading.Thread(target=_check, daemon=True).start()
+    threading.Thread(target=_run, daemon=True).start()
