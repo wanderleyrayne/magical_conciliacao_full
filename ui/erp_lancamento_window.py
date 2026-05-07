@@ -4,8 +4,6 @@ import threading
 import warnings
 import pandas as pd
 
-# Suprime aviso do openpyxl sobre Data Validation (dropdowns do Excel)
-# que não é suportado mas não afeta a leitura dos dados
 warnings.filterwarnings(
     "ignore",
     message="Data Validation extension is not supported and will be removed",
@@ -14,21 +12,13 @@ warnings.filterwarnings(
 )
 import numpy as np
 import json
-from datetime import datetime
+from datetime import datetime, date as _date
 from pathlib import Path
 
 from utils.paths import app_path, user_data_path
 from database.repository import SystemRepository
 
 
-# =============================================================================
-# MAPEAMENTO DE CAMPOS
-# Planilha → API MeEventos
-# Campos enviados: valor, descricao, idcategoria, mododepagamento, idevento
-# =============================================================================
-
-# Mapa: valor da coluna "TIPO DESPESA MeEventos" → tipocobranca da API
-# tipocobranca: 1=Receita, 2=Despesa (todos os tipos da planilha são despesas)
 TIPO_DESPESA_MAP = {
     "CMV":                  2,
     "DespesasPrestadores":  2,
@@ -37,21 +27,15 @@ TIPO_DESPESA_MAP = {
     "OutrasDespesas":       2,
 }
 
-# Mapa: FORMA PGTO (planilha) → mododepagamento ID (API MeEventos)
-# Confirme os IDs em Configurações → Modos de Pagamento no MeEventos
 FORMA_PGTO_MAP = {
     "PIX":      3,
     "TED":      2,
     "BOLETO":   4,
     "DINHEIRO": 1,
 }
-FORMA_PGTO_DEFAULT = 1   # usado quando a forma não está no mapa acima
+FORMA_PGTO_DEFAULT = 1
 
-# Mapa: CATEGORIA MeEventos (planilha) → idcategoria ID (API MeEventos)
-# Preencha com os IDs do seu cadastro em Configurações → Categorias no MeEventos
-# Deixe None para categorias que devem usar o valor padrão abaixo
 CATEGORIA_MAP = {
-    # ── Custo de Mão de Obra ──────────────────────────────────────────
     "Brigadista":                    "16599",
     "Cerimonialista":                "16799",
     "Chef":                          "15699",
@@ -62,8 +46,6 @@ CATEGORIA_MAP = {
     "Recepcionista":                 "15799",
     "Segurança e Manobrista":        "16899",
     "Manobrista":                    "16899",
-
-    # ── Custo Produtos Alimentícios ───────────────────────────────────
     "Bar":                           "17699",
     "Bebidas":                       "17099",
     "Bolo":                          "17199",
@@ -71,25 +53,15 @@ CATEGORIA_MAP = {
     "Doce":                          "17399",
     "Produtos Alimentícios - Outros":"17499",
     "Degustação":                    "17599",
-
-    # ── Serviços Terceiros ────────────────────────────────────────────
     "Decoração":                     "17899",
     "Limpeza":                       "18299",
-
-    # ── Som & Imagem / Iluminação ─────────────────────────────────────
     "Som & Imagem":                  "18099",
     "Iluminação":                    "18199",
-
-    # ── Custo Logística & Transporte ──────────────────────────────────
     "Combustível":                   "14099",
     "Frete":                         "17799",
     "Translado":                     "15299",
     "Transporte Cargas":             "2082717",
-
-    # ── Custo de Materiais & Mobiliários ─────────────────────────────
     "Aluguel Mobiliário":            "17999",
-
-    # ── Despesas Prestadores ──────────────────────────────────────────
     "Prestação de Serviços":         "2082704",
     "Prestação de Serviços - T":     "15499",
     "Prestação de Serviços - A":     "15399",
@@ -104,8 +76,6 @@ CATEGORIA_MAP = {
     "Férias":                        "21499",
     "Rescisões Trabalhistas":        "15099",
     "Pró-Labore Sócios":             "20699",
-
-    # ── Despesas Gerais ───────────────────────────────────────────────
     "Assistência Contábil & BPO":    "14299",
     "Assistência Jurídica":          "19599",
     "Cartório":                      "13999",
@@ -122,14 +92,10 @@ CATEGORIA_MAP = {
     "Serviços Gerais":               "20599",
     "Tecnologia da Informação":      "20199",
     "Telefonia & Internet":          "20299",
-
-    # ── Despesas Marketing & Publicidade ─────────────────────────────
     "Elaboração Conteúdo":           "14999",
     "Estrutura de Marketing":        "16299",
     "Marketing & Publicidade":       "2082699",
     "Tráfego Pago":                  "2081799",
-
-    # ── Despesas Ocupacional ──────────────────────────────────────────
     "Água e esgoto":                 "13599",
     "Alarmes":                       "19399",
     "Aluguel":                       "13699",
@@ -141,8 +107,6 @@ CATEGORIA_MAP = {
     "IPTU":                          "2080799",
     "Seguros":                       "19299",
     "Taxas":                         "18899",
-
-    # ── Impostos ─────────────────────────────────────────────────────
     "COFINS":                        "2082720",
     "CSLL":                          "2080699",
     "CSLL & IRPJ":                   "2082718",
@@ -156,15 +120,11 @@ CATEGORIA_MAP = {
     "PIS":                           "2082724",
     "PIS & COFINS":                  "2082719",
     "SIMPLES NACIONAL":              "2082721",
-
-    # ── Tarifas Bancárias ─────────────────────────────────────────────
     "Tarifa Boleto":                 "18499",
     "Tarifa Cartão Crédito":         "2082499",
     "Tarifa Cartão Débito":          "2082399",
     "Tarifa PIX":                    "18599",
     "Tarifas Bancárias":             "15199",
-
-    # ── Outras ────────────────────────────────────────────────────────
     "Antecipação - Degustação":      "2082712",
     "Antecipações & Retiradas Sócios":"20499",
     "Arrendamento":                  "13899",
@@ -175,8 +135,6 @@ CATEGORIA_MAP = {
     "Investimentos":                 "14499",
     "Juros":                         "14599",
     "Participação Sócios":           "2082599",
-
-    # ── Receitas ─────────────────────────────────────────────────────
     "Receita - Sinal":               "13099",
     "Receita - Recorrentes":         "13199",
     "Receita - Integralização":      "13399",
@@ -187,24 +145,12 @@ CATEGORIA_MAP = {
     "Receita - Opcional Pós Venda":  "2082709",
     "Estrutura de Marketing (R)":    "2082299",
     "Crédito Indevido":              "2082707",
+    "DespFixaVariável":              "2082704",
 }
-CATEGORIA_DEFAULT = "2082704"   # Prestação de Serviços — fallback genérico
+CATEGORIA_DEFAULT = "2082704"
 
 
 class ErpLancamentoWindow:
-    """
-    Módulo de lançamento de despesas no ERP MeEventos via API.
-
-    Fluxo:
-      1. Usuário informa a URL base e token da API
-      2. Seleciona planilha de despesas (.xlsx)
-      3. Sistema lê e valida as linhas
-      4. Preview com status de cada linha (pronta / atenção / bloqueada)
-      5. Usuário confirma → lança via API em thread separada
-      6. Resultado linha a linha com status de sucesso/erro
-    """
-
-    # Colunas da planilha (row index 3 = cabeçalho)
     COL_DATA          = "DATA"
     COL_TIPO          = "TIPO DESPESA\nMeEventos"
     COL_ID_EVENTO     = "ID\nMeEventos"
@@ -239,12 +185,14 @@ class ErpLancamentoWindow:
         self.df_raw      = None
         self.df_preview  = None
         self.file_path   = None
-        self._categoria_map_local = {}   # categorias dinâmicas do parceiro atual
+        self._categoria_map_local    = {}
+        self._payment_methods_local  = {}  # forma_pgto → id da API
+        self._futuras_info   = None
+        self._data_future    = None
+        self._avisos_carregamento = []
 
         self._build_layout()
         self._load_api_settings()
-
-        # Salva URL e token ao fechar a janela
         self.top.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # =========================================================================
@@ -259,7 +207,6 @@ class ErpLancamentoWindow:
             fg="white", bg="#1e293b", font=("Arial", 12, "bold")
         ).pack(side="left", padx=12, pady=10)
 
-        # ── Parceiro + modo ───────────────────────────────────────────────────
         api_frame = tk.LabelFrame(self.top, text="Parceiro e modo", padx=10, pady=8)
         api_frame.pack(fill="x", padx=12, pady=(10, 0))
 
@@ -290,11 +237,9 @@ class ErpLancamentoWindow:
             variable=self.dry_run_var
         ).grid(row=1, column=1, columnspan=3, sticky="w", padx=8)
 
-        # Armazena URL e token carregados das configurações
         self._current_url   = ""
         self._current_token = ""
 
-        # ── Arquivo ──────────────────────────────────────────────────────────
         file_frame = tk.LabelFrame(self.top, text="Planilha de despesas", padx=10, pady=8)
         file_frame.pack(fill="x", padx=12, pady=(8, 0))
 
@@ -304,7 +249,6 @@ class ErpLancamentoWindow:
         ttk.Button(file_frame, text="Selecionar planilha", command=self._select_file).pack(side="left", padx=6)
         ttk.Button(file_frame, text="↺ Revalidar", command=self._revalidate).pack(side="left")
 
-        # ── Filtros de preview ────────────────────────────────────────────────
         filter_frame = tk.Frame(self.top)
         filter_frame.pack(fill="x", padx=12, pady=(8, 0))
 
@@ -321,7 +265,6 @@ class ErpLancamentoWindow:
         self.summary_label = tk.Label(filter_frame, text="", font=("Arial", 9, "bold"))
         self.summary_label.pack(side="left", padx=12)
 
-        # ── Tabela de preview ─────────────────────────────────────────────────
         table_frame = tk.Frame(self.top)
         table_frame.pack(fill="both", expand=True, padx=12, pady=(6, 0))
 
@@ -365,7 +308,6 @@ class ErpLancamentoWindow:
 
         self.tree.bind("<Double-1>", self._on_row_double_click)
 
-        # ── Rodapé ───────────────────────────────────────────────────────────
         footer = tk.Frame(self.top, bd=1, relief="solid", padx=10, pady=8)
         footer.pack(fill="x", padx=12, pady=(6, 12))
 
@@ -384,11 +326,9 @@ class ErpLancamentoWindow:
                 from ui.erp_history_window import ErpHistoryWindow
                 ErpHistoryWindow(self.top, self.repo)
             except Exception as exc:
-                from tkinter import messagebox
                 messagebox.showerror("Erro", str(exc), parent=self.top)
 
-        ttk.Button(footer, text="📋 Histórico",
-                   command=_open_history).pack(side="right")
+        ttk.Button(footer, text="📋 Histórico", command=_open_history).pack(side="right")
 
         self.progress = ttk.Progressbar(footer, orient="horizontal", length=200, mode="determinate")
         self.progress.pack(side="left", padx=(0, 10))
@@ -396,7 +336,6 @@ class ErpLancamentoWindow:
         self.status_label = tk.Label(footer, text="Selecione uma planilha para começar.", fg="#475569")
         self.status_label.pack(side="left")
 
-        # Total de valor — alinhado à direita no rodapé
         self.total_valor_label = tk.Label(
             footer, text="", font=("Arial", 10, "bold"), fg="#1e293b")
         self.total_valor_label.pack(side="right", padx=(10, 0))
@@ -406,7 +345,6 @@ class ErpLancamentoWindow:
     # =========================================================================
 
     def _on_partner_selected(self, event=None):
-        """Carrega URL e token do parceiro selecionado e busca categorias da API."""
         name = self.partner_var.get()
         if not name:
             return
@@ -419,7 +357,14 @@ class ErpLancamentoWindow:
         if url and token:
             self.api_status_label.config(
                 text=f"API configurada ✓  ({url})", fg="#166534")
-            # Carrega categorias em background
+            # Carrega cache de formas de pagamento
+            try:
+                import json as _j
+                cached_pm = self.repo.get_setting(f"erp_payment_methods_{safe}")
+                if cached_pm:
+                    self._payment_methods_local = _j.loads(cached_pm)
+            except Exception:
+                pass
             import threading as _t
             _t.Thread(target=self._load_categories,
                       args=(url, token, safe), daemon=True).start()
@@ -432,17 +377,12 @@ class ErpLancamentoWindow:
                 fg="#b91c1c")
 
     def _load_categories(self, url_base: str, token: str, safe_name: str):
-        """
-        Busca categorias da API do MeEventos para o parceiro atual.
-        Cache de 7 dias no banco — silencioso, sem feedback na UI.
-        """
         import json as _json
         from datetime import datetime, timedelta
 
         cache_key    = f"erp_categories_{safe_name}"
         cache_ts_key = f"erp_categories_ts_{safe_name}"
 
-        # Verifica cache — usa se tiver menos de 7 dias
         try:
             cached    = self.repo.get_setting(cache_key)
             cached_ts = self.repo.get_setting(cache_ts_key)
@@ -450,11 +390,10 @@ class ErpLancamentoWindow:
                 ts = datetime.fromisoformat(cached_ts)
                 if datetime.now() - ts < timedelta(days=7):
                     self._categoria_map_local = _json.loads(cached)
-                    return  # cache válido — não chama a API
+                    return
         except Exception:
             pass
 
-        # Cache expirado ou inexistente — busca da API
         try:
             import requests as _req
             headers = {
@@ -462,8 +401,9 @@ class ErpLancamentoWindow:
                 "Content-Type":  "application/json",
                 "Accept":        "application/json",
             }
-            categoria_map = {}
 
+            # Busca categorias
+            categoria_map = {}
             for tipo in ("despesas", "receitas"):
                 page = 1
                 while True:
@@ -490,11 +430,46 @@ class ErpLancamentoWindow:
                 self.repo.save_setting(cache_key, _json.dumps(categoria_map))
                 self.repo.save_setting(cache_ts_key, datetime.now().isoformat())
 
+            # Busca formas de pagamento
+            pm_cache_key    = f"erp_payment_methods_{safe_name}"
+            pm_cache_ts_key = f"erp_payment_methods_ts_{safe_name}"
+            resp_pm = _req.get(
+                f"{url_base.rstrip('/')}/api/v1/payment-methods",
+                headers=headers, timeout=10
+            )
+            if resp_pm.status_code == 200:
+                pm_map = {}
+                for pm in resp_pm.json().get("data", []):
+                    nome = str(pm.get("nome") or "").strip()
+                    pid  = str(pm.get("id")   or "").strip()
+                    if nome and pid:
+                        # Mapeia nome exato e variacoes comuns
+                        pm_map[nome.upper()] = pid
+                        # Aliases comuns
+                        if "PIX" in nome.upper():
+                            pm_map["PIX"] = pid
+                        elif "TRANSFER" in nome.upper() and "INTERN" not in nome.upper():
+                            pm_map["TED"] = pid
+                            pm_map["DOC"] = pid
+                            pm_map["TRANSFERENCIA"] = pid
+                        elif "BOLETO" in nome.upper():
+                            pm_map["BOLETO"] = pid
+                        elif "DINHEIRO" in nome.upper():
+                            pm_map["DINHEIRO"] = pid
+                        elif "DEBITO AUTO" in nome.upper():
+                            pm_map["DEBITO"] = pid
+                        elif "DEPOSITO" in nome.upper():
+                            pm_map["DEPOSITO"] = pid
+
+                if pm_map:
+                    self._payment_methods_local = pm_map
+                    self.repo.save_setting(pm_cache_key, _json.dumps(pm_map))
+                    self.repo.save_setting(pm_cache_ts_key, datetime.now().isoformat())
+
         except Exception:
-            pass  # falha silenciosa — usa mapa estático como fallback
+            pass
 
     def _load_api_settings(self):
-        """Restaura o último parceiro selecionado."""
         try:
             last = self.repo.get_setting("erp_last_partner")
             if last and last in [p["partner_name"] for p in __import__(
@@ -505,64 +480,45 @@ class ErpLancamentoWindow:
             pass
 
     def _save_api_settings(self):
-        """Salva o último parceiro usado."""
         try:
             self.repo.save_setting("erp_last_partner", self.partner_var.get())
         except Exception:
             pass
 
     def _parse_date_str(self, text: str) -> str | None:
-        """
-        Tenta converter texto para data no formato YYYY-MM-DD.
-        Aceita: 23/04/2026, 2026-04-23, 23-04-2026, 2304/2026, 2304/26.
-        Retorna None se não conseguir parsear.
-        """
         import re as _re
         text = text.strip()
 
-        # DD/MM/YYYY
         m = _re.match(r'^(\d{1,2})/(\d{1,2})/(\d{4})$', text)
         if m:
             return f"{m.group(3)}-{m.group(2).zfill(2)}-{m.group(1).zfill(2)}"
 
-        # YYYY-MM-DD
         m = _re.match(r'^(\d{4})-(\d{2})-(\d{2})$', text)
         if m:
             return text
 
-        # DD-MM-YYYY
         m = _re.match(r'^(\d{1,2})-(\d{1,2})-(\d{4})$', text)
         if m:
             return f"{m.group(3)}-{m.group(2).zfill(2)}-{m.group(1).zfill(2)}"
 
-        # DDMM/YYYY — ex: "2304/2026" (Excel remove o zero do dia)
         m = _re.match(r'^(\d{2})(\d{2})/(\d{4})$', text)
         if m:
             return f"{m.group(3)}-{m.group(2)}-{m.group(1)}"
 
-        # DDMM/YY — ex: "2304/26"
         m = _re.match(r'^(\d{2})(\d{2})/(\d{2})$', text)
         if m:
             return f"20{m.group(3)}-{m.group(2)}-{m.group(1)}"
 
-        # Tenta pandas como último recurso
         try:
-            import pandas as _pd
-            dt = _pd.to_datetime(text, dayfirst=True, errors="coerce")
-            if not _pd.isna(dt):
+            dt = pd.to_datetime(text, dayfirst=True, errors="coerce")
+            if not pd.isna(dt):
                 return dt.strftime("%Y-%m-%d")
         except Exception:
             pass
 
         return None
 
-    def _resolve_event_by_date(self, data_fmt: str,
-                                avisos: list) -> tuple:
-        """
-        Busca o ID do evento pela data via API do MeEventos.
-        Usa cache em memória para evitar chamadas repetidas.
-        Retorna (id_evento, id_evento_display) ou (None, "").
-        """
+    def _resolve_event_by_date(self, data_fmt: str, avisos: list) -> tuple:
         if not hasattr(self, "_event_date_cache"):
             self._event_date_cache = {}
 
@@ -613,12 +569,10 @@ class ErpLancamentoWindow:
         return None, ""
 
     def _revalidate(self):
-        """Limpa cache de eventos e revalida a planilha com o parceiro atual."""
         self._event_date_cache = {}
         self._load_and_validate()
 
     def _on_close(self):
-        """Salva estado e fecha a janela."""
         self._save_api_settings()
         self.top.destroy()
 
@@ -626,19 +580,17 @@ class ErpLancamentoWindow:
         self.status_label.config(text=text, fg=color)
 
     def _on_row_double_click(self, event):
-        """Abre popup com o payload JSON completo da linha clicada."""
         item = self.tree.identify_row(event.y)
         if not item:
             return
 
-        # Descobre o índice original pelo número da linha Excel (coluna 1)
         vals = self.tree.item(item, "values")
         if not vals:
             return
 
         try:
             linha_excel = int(vals[1])
-            idx_original = linha_excel - 5   # header=4, dados=5+
+            idx_original = linha_excel - 5
         except (ValueError, IndexError):
             return
 
@@ -657,14 +609,12 @@ class ErpLancamentoWindow:
         status  = row.get("_status", "")
         aviso   = row.get("_aviso", "")
 
-        # ── Monta o popup ────────────────────────────────────────────────────
         win = tk.Toplevel(self.top)
         win.title(f"Payload — Linha {linha_excel}")
         win.geometry("560x460")
         win.resizable(True, True)
         win.grab_set()
 
-        # Cabeçalho colorido conforme status
         bg_colors = {
             self.STATUS_OK:       "#166534",
             self.STATUS_ATENCAO:  "#92400e",
@@ -679,13 +629,11 @@ class ErpLancamentoWindow:
                  fg="white", bg=bg, font=("Arial", 10, "bold")).pack(
             side="left", padx=12, pady=8)
 
-        # Aviso (se houver)
         if aviso:
             tk.Label(win, text=f"⚠  {aviso}", fg="#92400e", anchor="w",
                      font=("Arial", 9), wraplength=520).pack(
                 fill="x", padx=12, pady=(8, 0))
 
-        # JSON formatado
         import json as _json
         payload_txt = _json.dumps(payload, ensure_ascii=False, indent=2)
 
@@ -700,11 +648,9 @@ class ErpLancamentoWindow:
         sb.pack(side="right", fill="y")
         txt.configure(yscrollcommand=sb.set)
 
-        # Coloração básica das chaves JSON
         txt.insert("1.0", payload_txt)
         txt.config(state="disabled")
 
-        # Rodapé
         btn_frame = tk.Frame(win, padx=12, pady=8)
         btn_frame.pack(fill="x")
 
@@ -731,7 +677,6 @@ class ErpLancamentoWindow:
             self._load_file_from_path(path)
 
     def _load_file_from_path(self, path: str):
-        """Carrega planilha a partir de um caminho — usado pela tela de Pendências."""
         self.file_path = path
         self.file_label.config(text=Path(path).name, fg="#166534")
         self._event_date_cache = {}
@@ -748,10 +693,6 @@ class ErpLancamentoWindow:
         threading.Thread(target=self._load_worker, daemon=True).start()
 
     def _find_header_row(self, df: pd.DataFrame) -> int:
-        """
-        Detecta a linha do cabeçalho buscando a célula 'DATA' nas primeiras 10 linhas.
-        Funciona independente do número de linhas de instrução acima do cabeçalho.
-        """
         for i in range(min(10, len(df))):
             row_vals = [str(v).strip() for v in df.iloc[i].tolist()]
             if "DATA" in row_vals:
@@ -762,10 +703,6 @@ class ErpLancamentoWindow:
         )
 
     def _build_clean_headers(self, raw_headers: list) -> list:
-        """
-        Constrói nomes de colunas limpos a partir dos headers brutos,
-        tratando células vazias/NaN e nomes duplicados.
-        """
         clean = []
         seen = {}
         for i, h in enumerate(raw_headers):
@@ -784,18 +721,15 @@ class ErpLancamentoWindow:
         try:
             df_raw = pd.read_excel(self.file_path, sheet_name="Despesas", header=None)
 
-            # Detecta o cabeçalho dinamicamente — funciona com qualquer versão da planilha
             header_row_idx = self._find_header_row(df_raw)
             headers = self._build_clean_headers(df_raw.iloc[header_row_idx].tolist())
 
             data = df_raw.iloc[header_row_idx + 1:].reset_index(drop=True)
             data.columns = headers
 
-            # Normaliza coluna CATEGORIA — aceita com ou sem quebra de linha
             if self.COL_CATEGORIA not in data.columns and self.COL_CATEGORIA_ALT in data.columns:
                 data = data.rename(columns={self.COL_CATEGORIA_ALT: self.COL_CATEGORIA})
 
-            # Seleciona apenas as colunas relevantes que existem
             keep = [
                 self.COL_DATA, self.COL_TIPO, self.COL_ID_EVENTO,
                 self.COL_CATEGORIA, self.COL_DETALHE, self.COL_VALOR,
@@ -810,37 +744,147 @@ class ErpLancamentoWindow:
                 )
             data = data[keep].copy()
 
-            # Filtra linhas com data e valor válidos
-            data = data[data[self.COL_DATA].notna()].copy()
+            # Filtra linhas com valor válido
             data = data[data[self.COL_VALOR].notna()].copy()
-            data = data[data[self.COL_DATA].apply(
-                lambda x: not isinstance(x, str) or x.strip() == ""
-            )].copy()
             data = data[data[self.COL_VALOR].apply(
                 lambda x: isinstance(x, (int, float)) and not np.isnan(float(x))
             )].copy()
 
-            data = data.reset_index(drop=True)
-            self.df_raw = data
+            # Separa linhas sem data (avisa) e com data
+            sem_data = data[data[self.COL_DATA].isna() |
+                           data[self.COL_DATA].apply(
+                               lambda x: str(x).strip() in ("", "nan", "None"))].copy()
+            com_data = data[~data.index.isin(sem_data.index)].copy()
 
-            # Valida cada linha
-            self.df_preview = self._validate_all(data)
+            # Filtra por data: hoje=OK, futuro=pergunta, passado=ignora
+            hoje = _date.today()
+            passadas = []
+            futuras  = []
+            validas  = []
+
+            for idx, row in com_data.iterrows():
+                try:
+                    dt = pd.to_datetime(row[self.COL_DATA], dayfirst=True).date()
+                    if dt < hoje:
+                        passadas.append(idx)
+                    elif dt > hoje:
+                        futuras.append(idx)
+                    else:
+                        validas.append(idx)
+                except Exception:
+                    validas.append(idx)
+
+            data_valida  = com_data.loc[validas].copy()
+            data_future  = com_data.loc[futuras].copy()
+
+            # Avisos
+            avisos = []
+            if passadas:
+                avisos.append(
+                    f"{len(passadas)} linha(s) com data passada foram ignoradas.")
+            if sem_data is not None and not sem_data.empty:
+                try:
+                    vals_sem = sem_data[self.COL_VALOR].sum()
+                    vals_fmt = (f"R$ {vals_sem:,.2f}"
+                                .replace(",","X").replace(".",",").replace("X","."))
+                except Exception:
+                    vals_fmt = "?"
+                avisos.append(
+                    f"{len(sem_data)} linha(s) sem data encontrada(s) — {vals_fmt}.\n"
+                    f"Verifique a planilha antes de lançar.")
+
+            self._avisos_carregamento = avisos
+            self._futuras_info = (len(futuras),
+                sorted(set(str(com_data.loc[i, self.COL_DATA])[:10]
+                           for i in futuras))) if futuras else None
+            self._data_future = data_future
+
+            # Junta validas + sem_data (sem_data ficará bloqueada no validate_row)
+            data_final = pd.concat([data_valida, sem_data]).reset_index(drop=True)
+
+            # Garante que formas de pagamento foram carregadas antes de validar
+            if not self._payment_methods_local and self._current_url and self._current_token:
+                try:
+                    import requests as _req
+                    safe = self.partner_var.get().lower().replace(" ","_") if hasattr(self, 'partner_var') else ""
+                    pm_cached = self.repo.get_setting(f"erp_payment_methods_{safe}")
+                    if pm_cached:
+                        import json as _jj
+                        self._payment_methods_local = _jj.loads(pm_cached)
+                    else:
+                        resp_pm = _req.get(
+                            f"{self._current_url.rstrip('/')}/api/v1/payment-methods",
+                            headers={"Authorization": f"Bearer {self._current_token}",
+                                     "Content-Type": "application/json",
+                                     "Accept": "application/json"},
+                            timeout=10,
+                        )
+                        if resp_pm.status_code == 200:
+                            pm_map = {}
+                            for pm in resp_pm.json().get("data", []):
+                                nome = str(pm.get("nome") or "").strip()
+                                pid  = str(pm.get("id")   or "").strip()
+                                if nome and pid:
+                                    pm_map[nome.upper()] = pid
+                                    if "PIX" in nome.upper():
+                                        pm_map["PIX"] = pid
+                                    elif "TRANSFER" in nome.upper() and "INTERN" not in nome.upper():
+                                        pm_map["TED"] = pid
+                                        pm_map["DOC"] = pid
+                                        pm_map["TRANSFERENCIA"] = pid
+                                    elif "BOLETO" in nome.upper():
+                                        pm_map["BOLETO"] = pid
+                                    elif "DINHEIRO" in nome.upper():
+                                        pm_map["DINHEIRO"] = pid
+                            self._payment_methods_local = pm_map
+                            import json as _jj
+                            if pm_map and safe:
+                                self.repo.save_setting(f"erp_payment_methods_{safe}", _jj.dumps(pm_map))
+                except Exception as e:
+                    print(f"[ERP] Erro ao carregar payment-methods: {e}")
+
+            print(f"[ERP] payment_methods_local: {self._payment_methods_local}")
+
+            self.df_raw     = data_final
+            self.df_preview = self._validate_all(data_final)
 
             self.top.after(0, self._on_load_done)
 
         except Exception as exc:
-            self.top.after(0, lambda m=str(exc): self._set_status(f"Erro ao ler planilha: {m}", "#b91c1c"))
+            self.top.after(0, lambda m=str(exc): self._set_status(
+                f"Erro ao ler planilha: {m}", "#b91c1c"))
 
     def _on_load_done(self):
+        # Avisos de carregamento
+        for av in getattr(self, "_avisos_carregamento", []):
+            messagebox.showwarning("Planilha", av, parent=self.top)
+
+        # Pergunta sobre futuras
+        futuras_info = getattr(self, "_futuras_info", None)
+        data_future  = getattr(self, "_data_future", None)
+        if futuras_info and data_future is not None and not data_future.empty:
+            qtd, datas = futuras_info
+            datas_str  = ", ".join(datas[:5])
+            incluir = messagebox.askyesno(
+                "Datas Futuras",
+                f"{qtd} linha(s) com data futura encontrada(s):\n{datas_str}\n\n"
+                f"Deseja incluir essas linhas no lançamento?",
+                parent=self.top
+            )
+            if incluir:
+                extra = self._validate_all(data_future.reset_index(drop=True))
+                self.df_preview = pd.concat(
+                    [self.df_preview, extra], ignore_index=True)
+
         self._refresh_preview()
         total = len(self.df_preview)
         ok    = (self.df_preview["_status"] == self.STATUS_OK).sum()
         atenc = (self.df_preview["_status"] == self.STATUS_ATENCAO).sum()
         bloq  = (self.df_preview["_status"] == self.STATUS_BLOQUEIO).sum()
 
-        # Calcula total de valor das linhas não bloqueadas
+        # Total apenas das linhas que serão lançadas
         total_val = self.df_preview[
-            self.df_preview["_status"] != self.STATUS_BLOQUEIO
+            self.df_preview["_status"].isin([self.STATUS_OK, self.STATUS_ATENCAO])
         ]["_valor"].sum()
         total_val_fmt = (f"R$ {total_val:,.2f}"
                          .replace(",","X").replace(".",",").replace("X","."))
@@ -860,12 +904,6 @@ class ErpLancamentoWindow:
     # =========================================================================
 
     def _validate_all(self, data: pd.DataFrame) -> pd.DataFrame:
-        # ── Detecção de duplicatas ────────────────────────────────────────────
-        # Regra: só é duplicata quando TODOS esses campos são iguais:
-        #   data + fornecedor + favorecido + valor + id_evento
-        #
-        # Quando "Sem ID": também inclui a descrição na chave
-        # — evita falsos positivos em despesas diferentes no mesmo dia
         dup_indices = set()
         seen = {}
 
@@ -875,12 +913,10 @@ class ErpLancamentoWindow:
             except Exception:
                 data_val = str(row.get(self.COL_DATA) or "")
 
-            # Descrição completa (para diferenciar CSLL de IRPJ etc.)
-            descricao = str(row.get(self.COL_LANCAMENTO) or "").strip()
+            descricao  = str(row.get(self.COL_LANCAMENTO) or "").strip()
             if not descricao or descricao in ("nan", "#REF!"):
                 descricao = str(row.get(self.COL_DETALHE) or "").strip()
 
-            # Fornecedor / favorecido
             fornecedor = str(row.get("FORNECEDOR") or row.get("FAVORECIDO") or "").strip()
 
             try:
@@ -888,24 +924,16 @@ class ErpLancamentoWindow:
             except Exception:
                 valor = 0.0
 
-            # ID evento — quando tem ID diferente não é duplicata (manobrista em eventos distintos)
             id_evento_raw = str(row.get(self.COL_ID_EVENTO) or "").strip()
             SEM_ID_VALORES = {"nan", "", "sem id", "preencher id", "preencher", "s/id", "n/a", "na", "-"}
             tem_id = id_evento_raw.lower() not in SEM_ID_VALORES
             id_evento_key = id_evento_raw if tem_id else "__sem_id__"
 
-            # Favorecido separado para compor chave
             favorecido = str(row.get("FAVORECIDO") or "").strip()
 
-            # Chave de duplicata: id_evento + valor + fornecedor + favorecido + descrição
-            # Quando sem ID de evento: inclui linha como desempate adicional
-            # pois despesas diferentes no mesmo evento/sem-evento nunca são duplicatas
-            # a menos que TODOS os campos sejam idênticos incluindo fornecedor
             if tem_id:
-                # Com ID de evento: fornecedor+valor+descricao devem ser iguais
                 chave = (id_evento_key, valor, fornecedor, favorecido, descricao)
             else:
-                # Sem ID: adiciona linha como desempate — só duplicata se linha repetida
                 chave = (id_evento_key, valor, fornecedor, favorecido, descricao, str(i))
 
             if chave in seen:
@@ -914,7 +942,6 @@ class ErpLancamentoWindow:
             else:
                 seen[chave] = i
 
-        # Valida cada linha
         rows = []
         for i, row in data.iterrows():
             validated = self._validate_row(i, row, is_duplicate=(i in dup_indices))
@@ -925,15 +952,14 @@ class ErpLancamentoWindow:
         avisos = []
         status = self.STATUS_OK
 
-        # ── JÁ LANÇADO ANTERIORMENTE ──────────────────────────────────────────
         if is_duplicate:
             avisos.append("Linha duplicada — mesma data, descrição e valor")
             status = self.STATUS_BLOQUEIO
         else:
             try:
-                partner = self.partner_var.get() if hasattr(self, 'partner_var') else ""
+                partner   = self.partner_var.get() if hasattr(self, 'partner_var') else ""
                 file_name = Path(self.file_path).name if self.file_path else ""
-                linha_num = idx + 5  # offset do header
+                linha_num = idx + 5
 
                 ja_lancado = self.repo.check_already_launched(
                     partner_name=partner,
@@ -942,11 +968,10 @@ class ErpLancamentoWindow:
                     descricao=str(row.get(self.COL_LANCAMENTO) or ""),
                     valor=abs(float(row.get(self.COL_VALOR) or 0)),
                 )
-                if ja_lancado and not self._dry_run_var.get():
+                if ja_lancado and not self.dry_run_var.get():
                     avisos.append(
                         f"Já lançado em {str(ja_lancado.get('created_at',''))[:16]}"
                         f" | ID API: {ja_lancado.get('id_api','—')}"
-                        f" — linha ignorada no relançamento"
                     )
                     status = self.STATUS_BLOQUEIO
             except Exception:
@@ -954,14 +979,21 @@ class ErpLancamentoWindow:
 
         # ── DATA ──────────────────────────────────────────────────────────────
         data_val = row.get(self.COL_DATA)
-        try:
-            data_fmt = pd.to_datetime(data_val).strftime("%Y-%m-%d")
-        except Exception:
-            data_fmt = str(data_val)
-            avisos.append("Data inválida")
-            status = self.STATUS_BLOQUEIO
+        data_str = str(data_val or "").strip()
 
-        # ── TIPO DESPESA (interno — todos são despesa=2) ───────────────────────
+        if data_str in ("", "nan", "None", "NaT"):
+            data_fmt = ""
+            avisos.append("Sem data — revise a planilha")
+            status = self.STATUS_BLOQUEIO
+        else:
+            try:
+                data_fmt = pd.to_datetime(data_val, dayfirst=True).strftime("%Y-%m-%d")
+            except Exception:
+                data_fmt = data_str
+                avisos.append("Data inválida")
+                status = self.STATUS_BLOQUEIO
+
+        # ── TIPO DESPESA ───────────────────────────────────────────────────────
         tipo_raw = str(row.get(self.COL_TIPO, "") or "").strip()
         tipocobranca = TIPO_DESPESA_MAP.get(tipo_raw, 2)
 
@@ -971,11 +1003,9 @@ class ErpLancamentoWindow:
         id_evento_display = ""
 
         if isinstance(id_evento_raw, (int, float)) and not np.isnan(float(id_evento_raw)):
-            # Número direto → usa como ID
             id_evento = int(id_evento_raw)
             id_evento_display = str(id_evento)
         elif isinstance(id_evento_raw, datetime):
-            # Excel pode converter data para datetime — tenta buscar evento por data
             data_evento = id_evento_raw.strftime("%Y-%m-%d")
             id_evento, id_evento_display = self._resolve_event_by_date(data_evento, avisos)
             if not id_evento:
@@ -984,37 +1014,32 @@ class ErpLancamentoWindow:
                 status = max(status, self.STATUS_ATENCAO, key=self._status_weight)
         elif str(id_evento_raw or "").strip().lower() in ("sem id", "preencher id", "preencher", "s/id", "nan", ""):
             id_evento_display = "Sem ID"
-            avisos.append("Sem ID de evento — lançará sem vínculo com evento")
+            avisos.append("Sem ID de evento — lançará sem vínculo")
             status = max(status, self.STATUS_ATENCAO, key=self._status_weight)
         else:
-            # Pode ser uma data no formato texto (ex: "23/04/2026")
             raw_str = str(id_evento_raw).strip()
-            data_fmt = self._parse_date_str(raw_str)
-            if data_fmt:
-                id_evento, id_evento_display = self._resolve_event_by_date(data_fmt, avisos)
+            data_fmt_ev = self._parse_date_str(raw_str)
+            if data_fmt_ev:
+                id_evento, id_evento_display = self._resolve_event_by_date(data_fmt_ev, avisos)
                 if not id_evento:
                     id_evento_display = raw_str
                     avisos.append(f"Data '{raw_str}' — nenhum evento encontrado")
                     status = max(status, self.STATUS_ATENCAO, key=self._status_weight)
             else:
-                # Tenta usar como ID diretamente
                 try:
                     id_evento = int(float(raw_str))
                     id_evento_display = str(id_evento)
                 except Exception:
                     id_evento_display = raw_str
-                    avisos.append(f"ID pendente: '{raw_str}' — lançará sem vínculo")
+                    avisos.append(f"ID pendente: '{raw_str}'")
                     status = max(status, self.STATUS_ATENCAO, key=self._status_weight)
 
         # ── VALOR ─────────────────────────────────────────────────────────────
-        # Aceita todos os formatos: Número, Moeda, Contábil (pandas já lê como float),
-        # texto BR "238,00" / "2.230,03", texto EN "238.00"
         valor_raw = row.get(self.COL_VALOR, 0)
         valor = 0.0
 
-        def _parse_valor(v) -> float | None:
+        def _parse_valor(v):
             import re as _re
-            # 1. Já é numérico (Número/Moeda/Contábil do Excel → pandas float)
             if isinstance(v, (int, float)):
                 try:
                     f = float(v)
@@ -1022,17 +1047,14 @@ class ErpLancamentoWindow:
                 except Exception:
                     return None
             s = str(v or "").strip()
-            # Remove símbolos de moeda e espaços
             s = _re.sub(r'[R\$\s]', '', s)
             if not s or s in ("nan", "None", ""):
                 return None
-            # Formato BR: vírgula como decimal (238,00 / 2.230,03)
             if ',' in s:
                 try:
                     return abs(float(s.replace(".", "").replace(",", ".")))
                 except Exception:
                     pass
-            # Formato EN ou número puro: ponto como decimal ou sem decimal
             try:
                 return abs(float(s.replace(",", "")))
             except Exception:
@@ -1040,36 +1062,29 @@ class ErpLancamentoWindow:
             return None
 
         resultado = _parse_valor(valor_raw)
-
         if resultado and resultado > 0:
             valor = resultado
-        elif resultado == 0.0 or resultado is None:
+        else:
             avisos.append(f"Valor inválido ou zerado: '{valor_raw}'")
             status = self.STATUS_BLOQUEIO
 
-        # ── DESCRIÇÃO — coluna "PARA LANÇAMENTO DO FINANCEIRO NO Me Eventos" ──
-        # Esta é a descrição exata que o usuário já preparou para a tela do ERP.
-        # Fallback: DETALHE | FAVORECIDO quando a coluna estiver vazia ou com erro.
+        # ── DESCRIÇÃO ─────────────────────────────────────────────────────────
         lancamento = str(row.get(self.COL_LANCAMENTO, "") or "").strip()
         detalhe    = str(row.get(self.COL_DETALHE, "")    or "").strip()
         favorecido = str(row.get(self.COL_FAVORECIDO, "") or "").strip()
 
         if lancamento and lancamento not in ("nan",) and "#REF!" not in lancamento:
-            # Remove " | " inicial quando aparece por detalhe vazio (ex: " | FORNECEDOR")
             descricao = lancamento.lstrip(" |").strip()
         else:
             parts = [p for p in [detalhe, favorecido] if p and p not in ("nan",)]
             descricao = " | ".join(parts) if parts else tipo_raw
 
-        # ── CATEGORIA → idcategoria ────────────────────────────────────────────
-        # Aceita dois formatos de cabeçalho: "CATEGORIA\nMeEventos" ou "CATEGORIA MeEventos"
+        # ── CATEGORIA ─────────────────────────────────────────────────────────
         categoria_raw = str(
             row.get(self.COL_CATEGORIA) or
             row.get(self.COL_CATEGORIA_ALT) or ""
         ).strip()
 
-        # 1. Mapa dinâmico do parceiro (buscado da API) — tem prioridade
-        # 2. Mapa estático hardcoded (fallback)
         id_categoria = (
             self._categoria_map_local.get(categoria_raw) or
             CATEGORIA_MAP.get(categoria_raw)
@@ -1078,17 +1093,35 @@ class ErpLancamentoWindow:
         if id_categoria is None:
             id_categoria = CATEGORIA_DEFAULT
             if categoria_raw and categoria_raw not in ("nan",):
-                avisos.append(f"Categoria '{categoria_raw}' sem ID mapeado — usando padrão")
+                avisos.append(f"Categoria '{categoria_raw}' sem ID — usando padrão")
                 status = max(status, self.STATUS_ATENCAO, key=self._status_weight)
 
-        # ── MODO DE PAGAMENTO → mododepagamento ───────────────────────────────
+        # ── FORMA DE PAGAMENTO ────────────────────────────────────────────────
         forma_raw = str(row.get(self.COL_FORMA_PGTO, "") or "").strip().upper()
-        modo_pgto = FORMA_PGTO_MAP.get(forma_raw, FORMA_PGTO_DEFAULT)
-        if forma_raw and forma_raw not in FORMA_PGTO_MAP:
-            avisos.append(f"Forma '{forma_raw}' sem mapeamento — usando padrão")
-            status = max(status, self.STATUS_ATENCAO, key=self._status_weight)
 
-        # ── PAYLOAD — apenas os campos que o usuário preenche na tela do ERP ──
+        # Busca ID da forma de pagamento — prioridade: API > estatico
+        modo_pgto_id = (
+            self._payment_methods_local.get(forma_raw) or
+            self._payment_methods_local.get(forma_raw.upper())
+        )
+
+        import logging as _log2
+        _log2.getLogger("magical_conciliacao").info(
+            f"[ERP] forma_raw='{forma_raw}' | pm_local={self._payment_methods_local} | id_encontrado={modo_pgto_id}")
+
+        if modo_pgto_id:
+            modo_pgto = int(modo_pgto_id)
+        else:
+            # Fallback estatico
+            modo_pgto = FORMA_PGTO_MAP.get(forma_raw, FORMA_PGTO_DEFAULT)
+            if forma_raw and forma_raw not in FORMA_PGTO_MAP:
+                avisos.append(f"Forma '{forma_raw}' nao mapeada — usando padrao")
+                status = max(status, self.STATUS_ATENCAO, key=self._status_weight)
+            elif not modo_pgto_id:
+                avisos.append(f"Forma '{forma_raw}' — usando mapa estatico (ID={modo_pgto})")
+                status = max(status, self.STATUS_ATENCAO, key=self._status_weight)
+
+        # ── PAYLOAD ───────────────────────────────────────────────────────────
         payload = {
             "datapagamento":   data_fmt,
             "valor":           round(valor, 2),
@@ -1096,10 +1129,8 @@ class ErpLancamentoWindow:
             "tipocobranca":    tipocobranca,
             "descricao":       descricao[:200],
             "idcategoria":     id_categoria,
+            "mododepagamento": modo_pgto,
         }
-        # mododepagamento opcional — só inclui se mapeado explicitamente
-        if forma_raw in FORMA_PGTO_MAP:
-            payload["mododepagamento"] = modo_pgto
         if id_evento:
             payload["idevento"] = id_evento
 
@@ -1143,12 +1174,10 @@ class ErpLancamentoWindow:
             df = df[df["_status"] == filtro]
 
         for _, row in df.iterrows():
-            # Categoria: mostra nome + ID mapeado (ou "sem ID" se padrão)
             cat_display = row["_categoria"][:22]
             id_cat = row.get("_id_categoria", 1)
             cat_display += f" [{id_cat}]" if id_cat != 1 else " [?]"
 
-            # Descrição final que será enviada
             desc_display = row.get("_descricao", row["_detalhe"])[:45]
 
             self.tree.insert(
@@ -1185,26 +1214,20 @@ class ErpLancamentoWindow:
             return
 
         if not dry and not token:
-            messagebox.showwarning(
-                "Aviso",
+            messagebox.showwarning("Aviso",
                 f"Token da API não configurado para '{partner}'.\n\n"
-                "Acesse Configurações → API MeEventos para cadastrar."
-            )
+                "Acesse Configurações → API MeEventos.")
             return
 
         if not dry and not url_base:
-            messagebox.showwarning(
-                "Aviso",
-                f"URL da API não configurada para '{partner}'.\n\n"
-                "Acesse Configurações → API MeEventos para cadastrar."
-            )
+            messagebox.showwarning("Aviso",
+                f"URL da API não configurada para '{partner}'.")
             return
 
-        # Conta o que vai ser lançado (OK + ATENÇÃO, excluindo BLOQUEADO)
         df_to_send = self.df_preview[
             self.df_preview["_status"].isin([self.STATUS_OK, self.STATUS_ATENCAO])
         ]
-        n = len(df_to_send)
+        n    = len(df_to_send)
         bloq = (self.df_preview["_status"] == self.STATUS_BLOQUEIO).sum()
 
         modo_txt = "SIMULAÇÃO" if dry else "REAL"
@@ -1212,7 +1235,7 @@ class ErpLancamentoWindow:
             f"Modo: {modo_txt}\n\n"
             f"Serão enviadas: {n} despesas\n"
             f"Bloqueadas (ignoradas): {bloq}\n\n"
-            f"{'[SIMULAÇÃO — nenhum dado será enviado para a API]' if dry else 'Os dados serão ENVIADOS para a API do MeEventos.'}\n\n"
+            f"{'[SIMULAÇÃO — nenhum dado será enviado]' if dry else 'Os dados serão ENVIADOS para a API do MeEventos.'}\n\n"
             f"Confirma?"
         )
         if not messagebox.askyesno("Confirmar lançamento", msg):
@@ -1222,14 +1245,13 @@ class ErpLancamentoWindow:
         self.progress["value"] = 0
         self._set_status("Iniciando lançamento...")
 
-        # Registra o lote no banco para auditoria/rastreabilidade
         file_name = Path(self.file_path).name if self.file_path else "desconhecido"
         batch_id = self.repo.save_erp_launch_batch(
             partner_name  = partner,
             file_name     = file_name,
             file_path     = self.file_path or "",
             total_rows    = len(self.df_preview),
-            total_enviado = 0,   # atualizado ao final
+            total_enviado = 0,
             total_simulado= 0,
             total_erro    = 0,
             dry_run       = dry,
@@ -1260,7 +1282,6 @@ class ErpLancamentoWindow:
             else:
                 result = self._post_to_api(url_base, token, payload, idx)
 
-            # Log de cada item
             _log.lancamento_item(
                 parceiro  = partner_name,
                 linha     = idx + 5,
@@ -1270,7 +1291,6 @@ class ErpLancamentoWindow:
                 mensagem  = result.get("message", ""),
             )
 
-            # Grava item no banco para auditoria
             try:
                 self.repo.save_erp_launch_item(
                     batch_id    = batch_id,
@@ -1289,10 +1309,9 @@ class ErpLancamentoWindow:
             progress = int((i + 1) / total * 100)
             self.top.after(0, lambda p=progress, r=result, ri=row: self._on_row_launched(p, r, ri))
 
-        # Log de resumo do lote
-        ok   = sum(1 for r in results if r["status"] == "LANCADO")
-        erros= sum(1 for r in results if r["status"] == "ERRO_API")
-        sim  = sum(1 for r in results if r["status"] == "SIMULADO")
+        ok    = sum(1 for r in results if r["status"] == "LANCADO")
+        erros = sum(1 for r in results if r["status"] == "ERRO_API")
+        sim   = sum(1 for r in results if r["status"] == "SIMULADO")
         valor_total = sum(
             abs(float(row["_payload"].get("valor") or 0))
             for _, row in df_to_send.iterrows()
@@ -1315,10 +1334,8 @@ class ErpLancamentoWindow:
         try:
             import requests as _requests
         except ImportError:
-            return {
-                "idx": idx, "status": "ERRO_API",
-                "message": "Pacote 'requests' não instalado. Execute: pip install requests"
-            }
+            return {"idx": idx, "status": "ERRO_API",
+                    "message": "Pacote 'requests' não instalado."}
 
         try:
             resp = _requests.post(
@@ -1331,45 +1348,23 @@ class ErpLancamentoWindow:
                 json=payload,
                 timeout=15,
             )
-            _log.api(
-                endpoint = "POST /api/v1/financial",
-                status   = resp.status_code,
-                payload  = payload if resp.status_code not in (200, 201) else None,
-                resposta = resp.json() if resp.status_code not in (200, 201) else None,
-                parceiro = "",
-            )
             if resp.status_code in (200, 201):
                 data = resp.json()
                 id_criado = ""
                 if isinstance(data.get("data"), list) and data["data"]:
                     id_criado = data["data"][0].get("idmovimentacao", "")
-                return {
-                    "idx":    idx,
-                    "status": "LANCADO",
-                    "message": f"ID criado: {id_criado}",
-                    "id_api": id_criado,
-                }
+                return {"idx": idx, "status": "LANCADO",
+                        "message": f"ID criado: {id_criado}", "id_api": id_criado}
             else:
-                return {
-                    "idx":     idx,
-                    "status":  "ERRO_API",
-                    "message": f"HTTP {resp.status_code}: {resp.text[:120]}",
-                }
-        except _requests.exceptions.ConnectionError:
-            return {"idx": idx, "status": "ERRO_API",
-                    "message": "Sem conexão com a API. Verifique a URL e sua rede."}
-        except _requests.exceptions.Timeout:
-            return {"idx": idx, "status": "ERRO_API",
-                    "message": "Tempo de resposta esgotado (timeout 15s). Tente novamente."}
+                return {"idx": idx, "status": "ERRO_API",
+                        "message": f"HTTP {resp.status_code}: {resp.text[:120]}"}
         except Exception as exc:
-            _log.erro("Exceção em _post_to_api", exc=exc)
             return {"idx": idx, "status": "ERRO_API", "message": str(exc)[:120]}
 
     def _on_row_launched(self, progress, result, row_series):
         self.progress["value"] = progress
         self._set_status(f"Lançando... {progress}%")
 
-        # Atualiza a linha na treeview
         for item in self.tree.get_children():
             vals = self.tree.item(item, "values")
             linha_excel = row_series["_idx"] + 5
@@ -1398,21 +1393,14 @@ class ErpLancamentoWindow:
         )
         self.btn_lancar.config(state="normal")
 
-        # Registra resumo no log de auditoria
         try:
             modo_log = "SIMULAÇÃO" if dry_run else "REAL"
-            self.repo.log(
-                "INFO",
-                f"Lançamento ERP {modo_log} concluído",
-                f"batch_id={batch_id} | {lancados} {modo} | {erros} erro(s)"
-            )
+            self.repo.log("INFO", f"Lançamento ERP {modo_log} concluído",
+                          f"batch_id={batch_id} | {lancados} {modo} | {erros} erro(s)")
         except Exception:
             pass
 
-        # Notificação WhatsApp — envia em modo real e em simulação
         self._notificar_lancamento(lancados, erros, batch_id, dry_run=dry_run)
-
-        # Atualiza status no PocketBase se veio de uma pendência
         self._atualizar_pendencia_pos_lancamento(lancados, erros, dry_run)
 
         msg = (
@@ -1425,15 +1413,12 @@ class ErpLancamentoWindow:
 
         messagebox.showinfo("Resultado", msg)
 
-    def _atualizar_pendencia_pos_lancamento(self, lancados: int,
-                                             erros: int, dry_run: bool):
-        """Atualiza status da pendência no PocketBase após lançamento no ERP."""
-        planilha_id  = getattr(self, "_pendencia_id", None)
-        casa         = getattr(self, "_pendencia_casa", "")
+    def _atualizar_pendencia_pos_lancamento(self, lancados, erros, dry_run):
+        planilha_id = getattr(self, "_pendencia_id", None)
+        casa        = getattr(self, "_pendencia_casa", "")
         if not planilha_id:
-            return  # não veio da tela de Pendências
+            return
 
-        import threading
         def _do():
             try:
                 import sqlite3
@@ -1458,7 +1443,6 @@ class ErpLancamentoWindow:
                 from cloud_sync import CloudSync
                 cs = CloudSync(pb_url, pb_email, pb_senha)
 
-                # Calcula valor total
                 valor_total = 0.0
                 try:
                     if self.df_preview is not None:
@@ -1467,7 +1451,6 @@ class ErpLancamentoWindow:
                 except Exception:
                     pass
 
-                # Atualiza status para "lancado"
                 cs.confirmar_lancamento(
                     planilha_id = planilha_id,
                     casa        = casa,
@@ -1476,7 +1459,6 @@ class ErpLancamentoWindow:
                     erros       = erros,
                     valor_total = valor_total,
                 )
-
             except Exception as e:
                 import logging
                 logging.getLogger("magical_conciliacao").error(
@@ -1484,10 +1466,7 @@ class ErpLancamentoWindow:
 
         threading.Thread(target=_do, daemon=True).start()
 
-    def _notificar_lancamento(self, lancados: int, erros: int,
-                               batch_id, dry_run: bool = False):
-        """Envia notificação WhatsApp após lançamento no ERP."""
-        import threading
+    def _notificar_lancamento(self, lancados, erros, batch_id, dry_run=False):
         def _enviar():
             try:
                 import sqlite3
@@ -1513,9 +1492,7 @@ class ErpLancamentoWindow:
 
                 from notificador import Notificador
                 n = Notificador(evo_url, evo_key, instancia)
-
-                st = n.status_instancia()
-                if not st.get("conectado"):
+                if not n.status_instancia().get("conectado"):
                     return
 
                 parceiro  = self.partner_var.get() if hasattr(self, 'partner_var') else ""
@@ -1529,48 +1506,29 @@ class ErpLancamentoWindow:
                 except Exception:
                     pass
 
-                # Prefixo simulação
                 prefixo = "[SIMULACAO] " if dry_run else ""
 
                 if erros == 0:
                     msg = (
-                        f"*{prefixo}Magical — ERP Lancado*\n\n"
+                        f"*{prefixo}Magical — Despesas Lancadas no MeEventos*\n\n"
                         f"Casa: {parceiro}\n"
                         f"Planilha: {file_name}\n"
                         f"Lancado por: {meu_nome}\n"
                         f"Total: R$ {valor_total:,.2f}\n"
                         f"Lancamentos: {lancados}\n\n"
                         f"CNAB disponivel para geracao."
-                    ).replace(",", "X").replace(".", ",").replace("X", ".")
+                    ).replace(",","X").replace(".",",").replace("X",".")
                 else:
                     msg = (
                         f"*{prefixo}Magical — ERP com Erros*\n\n"
                         f"Casa: {parceiro}\n"
-                        f"Planilha: {file_name}\n"
                         f"Lancados: {lancados} | Erros: {erros}\n\n"
                         f"Verifique os erros no sistema."
                     )
 
-                if num_marcielo:
-                    n.enviar_contato(num_marcielo, msg)
-
-                if num_wanderley and num_wanderley != num_marcielo:
-                    n.enviar_contato(num_wanderley, msg)
-
-                # Salva no PocketBase
-                pb_url   = get_cfg("pb_url")
-                pb_email = get_cfg("pb_email")
-                pb_senha = get_cfg("pb_senha")
-                if pb_url and pb_email and pb_senha:
-                    from cloud_sync import CloudSync
-                    cs = CloudSync(pb_url, pb_email, pb_senha)
-                    cs.criar_notificacao(
-                        tipo        = "erp_lancado",
-                        casa        = parceiro,
-                        mensagem    = msg,
-                        planilha_id = str(batch_id or ""),
-                        destinatario= "marcielo",
-                    )
+                for num in [num_marcielo, num_wanderley]:
+                    if num:
+                        n.enviar_contato(num, msg)
 
             except Exception:
                 pass

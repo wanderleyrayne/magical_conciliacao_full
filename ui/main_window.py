@@ -61,9 +61,9 @@ class MainWindow:
     def open_erp_lancamento(self):
         ErpLancamentoWindow(self.root)
 
-    def open_pendencias_window(self):
-        from ui.pendencias_window import PendenciasWindow
-        PendenciasWindow(self.root, db_path=str(self.repo.db.db_path))
+    def open_workflow_window(self):
+        from ui.workflow_window import WorkflowWindow
+        WorkflowWindow(self.root, db_path=str(self.repo.db.db_path))
 
     def open_settings_window(self):
         SettingsWindow(
@@ -127,7 +127,6 @@ class MainWindow:
         mode_box = tk.LabelFrame(uploads_container, text="Modo ERP", bg="#f8fafc", padx=10, pady=8)
         mode_box.pack(fill="x", pady=5)
 
-        # Seletor de parceiro/casa — isola a memória de conciliação por casa
         from core.partner_rules import PARTNERS
         partner_box = tk.LabelFrame(uploads_container, text="Parceiro / Casa",
                                      bg="#f8fafc", padx=10, pady=8)
@@ -195,22 +194,30 @@ class MainWindow:
         actions_row1 = tk.Frame(self.bottom_container, bg="#f8fafc")
         actions_row1.pack(fill="x", pady=(10, 4))
 
-        ttk.Button(actions_row1, text="Limpar", command=self.clear_uploads).pack(side="left", padx=(0, 6))
-        ttk.Button(actions_row1, text="Executar conciliação", command=self.run_reconciliation).pack(side="left", padx=(0, 6))
-        ttk.Button(actions_row1, text="Histórico", command=self.open_history_window).pack(side="left", padx=(0, 6))
-        ttk.Button(actions_row1, text="⚙ Configurações", command=self.open_settings_window).pack(side="right")
+        ttk.Button(actions_row1, text="Limpar",
+                   command=self.clear_uploads).pack(side="left", padx=(0, 6))
+        ttk.Button(actions_row1, text="Executar conciliação",
+                   command=self.run_reconciliation).pack(side="left", padx=(0, 6))
+        ttk.Button(actions_row1, text="Histórico",
+                   command=self.open_history_window).pack(side="left", padx=(0, 6))
+        ttk.Button(actions_row1, text="⚙ Configurações",
+                   command=self.open_settings_window).pack(side="right")
 
         # Linha 2: ações secundárias
         actions_row2 = tk.Frame(self.bottom_container, bg="#f8fafc")
         actions_row2.pack(fill="x", pady=(0, 8))
 
-        ttk.Button(actions_row2, text="↑ Lançar no ERP", command=self.open_erp_lancamento).pack(side="left", padx=(0, 6))
-        ttk.Button(actions_row2, text="📋 Pendências", command=self.open_pendencias_window).pack(side="left", padx=(0, 6))
+        ttk.Button(actions_row2, text="↑ Lançar no ERP",
+                   command=self.open_erp_lancamento).pack(side="left", padx=(0, 6))
+        ttk.Button(actions_row2, text="⚡ Workflow",
+                   command=self.open_workflow_window).pack(side="left", padx=(0, 6))
 
-        progress_box = tk.LabelFrame(self.bottom_container, text="Processamento", bg="#f8fafc", padx=10, pady=10)
+        progress_box = tk.LabelFrame(self.bottom_container, text="Processamento",
+                                      bg="#f8fafc", padx=10, pady=10)
         progress_box.pack(fill="x", pady=(0, 0))
 
-        self.progress = ttk.Progressbar(progress_box, orient="horizontal", length=280, mode="determinate")
+        self.progress = ttk.Progressbar(progress_box, orient="horizontal",
+                                         length=280, mode="determinate")
         self.progress.pack(fill="x", pady=(0, 8))
 
         self.progress_text = tk.Label(
@@ -253,7 +260,6 @@ class MainWindow:
             card.pack_forget()
 
         visible = ["Extrato bancário"]
-
         if self.erp_mode.get() == "consolidado":
             visible.append("ERP consolidado")
         else:
@@ -331,32 +337,25 @@ class MainWindow:
             if len(short_name) > 32:
                 short_name = short_name[:32] + "..."
 
-            self.root.after(
-                0,
-                lambda: self.file_labels[file_type].config(
-                    text=(
-                        f"{short_name}\n"
-                        f"{summary['linhas']} linhas | {summary['colunas']} colunas | {len(normalized_df)} regs"
-                    ),
-                    fg="#166534"
-                )
-            )
+            self.root.after(0, lambda: self.file_labels[file_type].config(
+                text=(
+                    f"{short_name}\n"
+                    f"{summary['linhas']} linhas | {summary['colunas']} colunas | {len(normalized_df)} regs"
+                ),
+                fg="#166534"
+            ))
 
             self.root.after(0, lambda: self._update_preview(preview_text))
             self.root.after(0, lambda: self.progress.config(value=100))
-            self.root.after(0, lambda: self.progress_text.config(text="Arquivo carregado e normalizado com sucesso"))
+            self.root.after(0, lambda: self.progress_text.config(
+                text="Arquivo carregado e normalizado com sucesso"))
             self.root.after(0, lambda: self.status_bar.set_text(
                 f"{file_type} carregado | Entidades em base: {self.repo.count_entities_master()}"
             ))
 
         except Exception as exc:
-            self.repo.log(
-                "ERROR",
-                f"Erro ao carregar arquivo: {file_type}",
-                str(exc)
-            )
+            self.repo.log("ERROR", f"Erro ao carregar arquivo: {file_type}", str(exc))
             erro_msg = f"Não foi possível carregar o arquivo de {file_type}.\n\nDetalhes: {str(exc)}"
-
             self.root.after(0, lambda: self.progress.config(value=0))
             self.root.after(0, lambda: self.progress_text.config(text="Falha ao carregar arquivo"))
             self.root.after(0, lambda: self.status_bar.set_text("Erro no carregamento"))
@@ -365,16 +364,12 @@ class MainWindow:
     def _normalize_by_type(self, file_type: str, df):
         if file_type == "Extrato bancário":
             return Normalizer.normalizar_extrato(df)
-
         if file_type == "ERP despesas":
             return Normalizer.normalizar_erp_despesas(df)
-
         if file_type == "ERP receitas":
             return Normalizer.normalizar_erp_receitas(df)
-
         if file_type == "ERP consolidado":
             return Normalizer.normalizar_erp_consolidado(df)
-
         return df.copy()
 
     def _build_preview_text(self, file_path: str, summary: dict, normalized_df) -> str:
@@ -388,7 +383,6 @@ class MainWindow:
             "",
             "Cabeçalhos detectados:"
         ]
-
         for col in summary["nomes_colunas"][:50]:
             lines.append(f"- {col}")
 
@@ -400,32 +394,21 @@ class MainWindow:
             "",
             "Campos:"
         ])
-
         for col in normalized_df.columns:
             lines.append(f"- {col}")
 
         if "tipo" in normalized_df.columns:
-            entradas = 0
-            saidas = 0
             try:
                 entradas = int((normalized_df["tipo"] == "ENTRADA").sum())
-                saidas = int((normalized_df["tipo"] == "SAIDA").sum())
+                saidas   = int((normalized_df["tipo"] == "SAIDA").sum())
+                lines.extend(["", "Resumo por tipo:",
+                               f"- Entradas: {entradas}", f"- Saídas: {saidas}"])
             except Exception:
                 pass
 
-            lines.extend([
-                "",
-                "Resumo por tipo:",
-                f"- Entradas: {entradas}",
-                f"- Saídas: {saidas}",
-            ])
-
         try:
-            lines.extend([
-                "",
-                "Prévia dos 5 primeiros registros:",
-                normalized_df.head(5).to_string(index=False)
-            ])
+            lines.extend(["", "Prévia dos 5 primeiros registros:",
+                           normalized_df.head(5).to_string(index=False)])
         except Exception:
             pass
 
@@ -443,22 +426,17 @@ class MainWindow:
 
     def clear_uploads(self):
         for name in self.files.keys():
-            self.files[name] = {
-                "path": None,
-                "raw_df": None,
-                "normalized_df": None,
-                "summary": None
-            }
+            self.files[name] = {"path": None, "raw_df": None,
+                                 "normalized_df": None, "summary": None}
             if name in self.file_labels:
                 self.file_labels[name].config(
-                    text="Nenhum arquivo selecionado",
-                    fg="#64748b"
-                )
+                    text="Nenhum arquivo selecionado", fg="#64748b")
 
         self.progress["value"] = 0
         self.progress_text.config(text="Aguardando arquivos...")
         self._update_preview("Nenhum arquivo carregado.")
-        self.status_bar.set_text(f"Uploads limpos | Entidades em base: {self.repo.count_entities_master()}")
+        self.status_bar.set_text(
+            f"Uploads limpos | Entidades em base: {self.repo.count_entities_master()}")
 
     def run_reconciliation(self):
         df_banco     = self.files["Extrato bancário"]["normalized_df"]
@@ -485,10 +463,9 @@ class MainWindow:
                 aviso("Carregue ao menos um arquivo de ERP: despesas ou receitas.")
                 return
 
-        # Lê a tolerância de data configurada pelo usuário
-        settings    = SettingsManager(str(self.repo.db.db_path))
+        settings       = SettingsManager(str(self.repo.db.db_path))
         date_tolerance = settings.get_date_tolerance()
-        partner_name = self.partner_var.get().strip()
+        partner_name   = self.partner_var.get().strip()
 
         if not partner_name:
             from tkinter import messagebox
@@ -502,10 +479,9 @@ class MainWindow:
 
         self.progress["value"] = 0
         self.progress_text.config(text="Iniciando conciliação...")
-        self.status_bar.set_text(f"Executando conciliação (tolerância: {date_tolerance} dias)")
+        self.status_bar.set_text(
+            f"Executando conciliação (tolerância: {date_tolerance} dias)")
 
-        # Roda em thread separada para não travar a UI
-        import threading
         thread = threading.Thread(
             target=self._run_reconciliation_worker,
             args=(df_banco, df_despesas, df_receitas, df_entidades,
@@ -523,14 +499,12 @@ class MainWindow:
             if df_despesas is not None and not df_despesas.empty:
                 self._set_progress(30, "Conciliando despesas...")
                 df_result_desp = Reconciler.conciliar_despesas(
-                    df_banco, df_despesas, df_entidades, date_tolerance=date_tolerance
-                )
+                    df_banco, df_despesas, df_entidades, date_tolerance=date_tolerance)
 
             if df_receitas is not None and not df_receitas.empty:
                 self._set_progress(65, "Conciliando receitas...")
                 df_result_rec = Reconciler.conciliar_receitas(
-                    df_banco, df_receitas, df_entidades, date_tolerance=date_tolerance
-                )
+                    df_banco, df_receitas, df_entidades, date_tolerance=date_tolerance)
 
             self._set_progress(85, "Consolidando resultados...")
             df_final = Reconciler.consolidar_resultados(df_result_desp, df_result_rec)
@@ -540,44 +514,25 @@ class MainWindow:
 
             self._set_progress(92, "Salvando no banco...")
             partner_receipts_summary = RevenuePartnerMatcher.build_partner_receipts_summary(
-                df_banco=df_banco,
-                repo=self.repo,
-            )
+                df_banco=df_banco, repo=self.repo)
 
             run_id = self.repo.save_reconciliation_run(df_final)
             self.repo.save_reconciliation_results(run_id, df_final)
             self.repo.log(
-                "INFO",
-                "Conciliação executada",
+                "INFO", "Conciliação executada",
                 f"run_id={run_id} | parceiro={partner_name or 'não informado'}"
                 f" | registros={len(df_final)} | tolerancia={date_tolerance}d"
             )
 
-            self.root.after(0, lambda: self._on_reconciliation_done(df_final, partner_receipts_summary))
+            self.root.after(0, lambda: self._on_reconciliation_done(
+                df_final, partner_receipts_summary))
 
         except Exception as exc:
             self.repo.log("ERROR", "Erro ao executar conciliação", str(exc))
             msg = f"Erro ao executar conciliação.\n\nDetalhes: {str(exc)}"
             self.root.after(0, lambda m=msg: self._on_reconciliation_error(m))
 
-    def _apply_manual_memory(self, df: "pd.DataFrame",
-                              partner_name: str = "") -> "pd.DataFrame":
-        """
-        Reaplica conciliações manuais de execuções anteriores com chave robusta.
-
-        BANCO — 3 níveis de chave (do mais ao menos específico):
-          Nível 1 (exato):    data + valor_centavos + documento_limpo + descricao_40
-          Nível 2 (forte):    data + valor_centavos + documento_limpo
-          Nível 3 (moderado): data + valor_centavos + favorecido_40
-
-        ERP — 2 níveis:
-          Nível 1 (exato):  data + valor_centavos + descricao_60
-          Nível 2 (forte):  data + valor_centavos + descricao_30
-
-        Valor em centavos (int) elimina problemas de float.
-        Data normalizada via pandas elimina variações de formato.
-        Documento limpo (só dígitos) elimina pontuação.
-        """
+    def _apply_manual_memory(self, df, partner_name=""):
         import pandas as pd
         import re
 
@@ -589,56 +544,38 @@ class MainWindow:
         if not memoria or df.empty:
             return df
 
-        # ── Funções de normalização ───────────────────────────────────────────
-
-        def _val_cents(v) -> int | None:
-            """Converte valor para centavos inteiros — elimina imprecisão de float."""
+        def _val_cents(v):
             try:
-                f = abs(float(str(v).replace(',', '.').strip()))
-                return int(round(f * 100))
+                return int(round(abs(float(str(v).replace(',', '.').strip())) * 100))
             except Exception:
                 return None
 
-        def _norm_date(v) -> str:
-            """Normaliza data para YYYY-MM-DD via pandas."""
+        def _norm_date(v):
             try:
                 dt = pd.to_datetime(v, errors='coerce', dayfirst=True)
-                if pd.isna(dt):
-                    return ''
-                return dt.strftime('%Y-%m-%d')
+                return '' if pd.isna(dt) else dt.strftime('%Y-%m-%d')
             except Exception:
                 return str(v or '')[:10]
 
-        def _norm_doc(v) -> str:
-            """Remove tudo que não é dígito do CPF/CNPJ."""
+        def _norm_doc(v):
             return re.sub(r'\D', '', str(v or ''))
 
-        def _norm_str(v, n: int) -> str:
-            """Normaliza string: upper, sem espaços duplos, truncada."""
-            s = re.sub(r'\s+', ' ', str(v or '').strip().upper())
-            return s[:n]
+        def _norm_str(v, n):
+            return re.sub(r'\s+', ' ', str(v or '').strip().upper())[:n]
 
-        # ── Monta índices da memória ──────────────────────────────────────────
-
-        # Banco: (data, cents, doc, desc40) / (data, cents, doc) / (data, cents, fav40)
-        mem_banco_l1 = {}  # chave → nota
+        mem_banco_l1 = {}
         mem_banco_l2 = {}
         mem_banco_l3 = {}
-
-        # ERP: (data, cents, desc60) / (data, cents, desc30)
-        mem_erp_l1 = {}
-        mem_erp_l2 = {}
+        mem_erp_l1   = {}
+        mem_erp_l2   = {}
 
         for m in memoria:
             nota = str(m.get('manual_note') or 'Conciliado em execução anterior')
-
-            # — Chaves BANCO —
-            d    = _norm_date(m.get('data_banco'))
-            c    = _val_cents(m.get('valor_banco'))
-            doc  = _norm_doc(m.get('documento_banco'))
-            desc = _norm_str(m.get('descricao_banco'), 40)
-            fav  = _norm_str(m.get('favorecido_banco'), 40)
-
+            d   = _norm_date(m.get('data_banco'))
+            c   = _val_cents(m.get('valor_banco'))
+            doc = _norm_doc(m.get('documento_banco'))
+            desc= _norm_str(m.get('descricao_banco'), 40)
+            fav = _norm_str(m.get('favorecido_banco'), 40)
             if d and c and doc and desc:
                 mem_banco_l1[(d, c, doc, desc)] = nota
             if d and c and doc:
@@ -646,22 +583,17 @@ class MainWindow:
             if d and c and fav:
                 mem_banco_l3[(d, c, fav)] = nota
 
-            # — Chaves ERP —
             d    = _norm_date(m.get('data_erp'))
             c    = _val_cents(m.get('valor_erp'))
             desc = _norm_str(m.get('descricao_erp'), 60)
             desc30 = _norm_str(m.get('descricao_erp'), 30)
-
             if d and c and desc:
                 mem_erp_l1[(d, c, desc)] = nota
             if d and c and desc30:
                 mem_erp_l2[(d, c, desc30)] = nota
 
-        # ── Aplica memória ────────────────────────────────────────────────────
-
         df = df.copy()
         reaplicados = 0
-        conflitos   = 0
 
         for idx, row in df.iterrows():
             status = str(row.get('status', '')).upper()
@@ -672,25 +604,21 @@ class MainWindow:
             nivel_match = None
 
             if status == 'SOMENTE_BANCO':
-                d    = _norm_date(row.get('data_banco'))
-                c    = _val_cents(row.get('valor_banco'))
-                doc  = _norm_doc(row.get('documento_banco'))
-                desc = _norm_str(row.get('descricao_banco'), 40)
-                fav  = _norm_str(row.get('favorecido_banco'), 40)
-
+                d   = _norm_date(row.get('data_banco'))
+                c   = _val_cents(row.get('valor_banco'))
+                doc = _norm_doc(row.get('documento_banco'))
+                desc= _norm_str(row.get('descricao_banco'), 40)
+                fav = _norm_str(row.get('favorecido_banco'), 40)
                 if not d or not c:
-                    continue  # sem data ou valor → não aplica
-
+                    continue
                 if (k := (d, c, doc, desc)) in mem_banco_l1:
                     nota_match, nivel_match = mem_banco_l1[k], 1
                 elif doc and (k := (d, c, doc)) in mem_banco_l2:
                     nota_match, nivel_match = mem_banco_l2[k], 2
-                elif fav and (k := (d, c, fav)) in mem_banco_l3:
-                    # Nível 3: exige documento também para evitar falso positivo
-                    # (favorecido pode ser genérico — ex: "PAGAMENTOS A FORNECEDORES")
-                    if len(fav) >= 8 and fav not in (
-                        'PAGAMENTOS A FORNECEDORES', 'PIX ENVIADO',
-                        'TED ENVIADO', 'TRANSFERENCIA'):
+                elif fav and len(fav) >= 8 and fav not in (
+                        'PAGAMENTOS A FORNECEDORES','PIX ENVIADO',
+                        'TED ENVIADO','TRANSFERENCIA'):
+                    if (k := (d, c, fav)) in mem_banco_l3:
                         nota_match, nivel_match = mem_banco_l3[k], 3
 
             elif status == 'SOMENTE_ERP':
@@ -698,10 +626,8 @@ class MainWindow:
                 c    = _val_cents(row.get('valor_erp'))
                 desc = _norm_str(row.get('descricao_erp'), 60)
                 desc30 = _norm_str(row.get('descricao_erp'), 30)
-
                 if not d or not c:
                     continue
-
                 if desc and (k := (d, c, desc)) in mem_erp_l1:
                     nota_match, nivel_match = mem_erp_l1[k], 1
                 elif desc30 and (k := (d, c, desc30)) in mem_erp_l2:
@@ -714,12 +640,8 @@ class MainWindow:
                 reaplicados += 1
 
         if reaplicados > 0:
-            self.repo.log(
-                "INFO",
-                "Memória de conciliação aplicada",
-                f"{reaplicados} registro(s) reaplicados | {conflitos} conflito(s) ignorados"
-            )
-
+            self.repo.log("INFO", "Memória de conciliação aplicada",
+                          f"{reaplicados} registro(s) reaplicados")
         return df
 
     def _on_reconciliation_done(self, df_final, partner_receipts_summary):
@@ -732,9 +654,6 @@ class MainWindow:
             return
 
         ResultsWindow(self.root, df_final, self.repo)
-
-        # Resumo de parceiros removido da abertura automática
-        # Agora acessível pelo botão "Resumo parceiros" na tela de resultado
 
     def _on_reconciliation_error(self, msg):
         erro(msg)
