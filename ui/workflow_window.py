@@ -274,25 +274,29 @@ class WorkflowWindow:
         print(f"[WORKFLOW] Card criado: {p.get('casa')} | {status}")
 
     def _mostrar_detalhes(self, p: dict):
-        """Popup com detalhes completos do card."""
+        """Popup com detalhes completos do card + botoes de avanco/retrocesso."""
         status = p.get("status", "")
-        status_label = {s: l for s, l, *_ in COLUNAS}.get(status, status)
+        pid    = p.get("id", "")
+
+        # Ordem das colunas para navegacao
+        ordem  = [c[0] for c in COLUNAS]
+        idx    = ordem.index(status) if status in ordem else -1
+
+        status_labels = {s: l for s, l, *_ in COLUNAS}
+        status_label  = status_labels.get(status, status)
 
         pop = tk.Toplevel(self.win)
         pop.title(f"Detalhes — {p.get('casa','')}")
-        pop.geometry("380x320")
+        pop.geometry("400x400")
         pop.resizable(False, False)
         pop.grab_set()
 
-        # Header
+        # Header colorido
         fg_acc = "#1e293b"
         for s, lbl, bg, fg in COLUNAS:
             if s == status:
                 fg_acc = fg
-                bg_acc = bg
                 break
-        else:
-            bg_acc = "#f8fafc"
 
         hdr = tk.Frame(pop, bg=fg_acc, pady=10)
         hdr.pack(fill="x")
@@ -304,7 +308,7 @@ class WorkflowWindow:
                  font=("Arial", 9)).pack()
 
         # Detalhes
-        body = tk.Frame(pop, padx=16, pady=12)
+        body = tk.Frame(pop, padx=16, pady=10)
         body.pack(fill="both", expand=True)
 
         def row(label, valor):
@@ -323,11 +327,54 @@ class WorkflowWindow:
         row("Lancado por:",  p.get("lancado_por", "—"))
         row("CNAB por:",     p.get("cnab_gerado_por", "—"))
         row("Aprovado por:", p.get("aprovado_por", "—"))
-
         if p.get("motivo_reprovacao"):
             row("Motivo:", p.get("motivo_reprovacao"))
 
-        ttk.Button(pop, text="Fechar", command=pop.destroy).pack(pady=(0,10))
+        # Separador
+        ttk.Separator(pop, orient="horizontal").pack(fill="x", padx=16, pady=6)
+
+        # Botoes de navegacao manual
+        nav_frame = tk.Frame(pop, padx=16, pady=4)
+        nav_frame.pack(fill="x")
+
+        tk.Label(nav_frame, text="Mover card manualmente:",
+                 fg="#64748b", font=("Arial", 8)).pack(anchor="w", pady=(0,4))
+
+        btn_frame = tk.Frame(nav_frame)
+        btn_frame.pack(fill="x")
+
+        meu_nome = self._get_cfg("meu_nome", "Usuario")
+
+        def mover(novo_status):
+            if not self.cloud:
+                return
+            try:
+                self.cloud.atualizar_status(pid, novo_status, lancado_por=meu_nome)
+                self._load()
+                pop.destroy()
+            except Exception as e:
+                messagebox.showerror("Erro", str(e), parent=pop)
+
+        # Botao Voltar
+        if idx > 0:
+            status_anterior = ordem[idx - 1]
+            label_anterior  = status_labels.get(status_anterior, status_anterior)
+            ttk.Button(btn_frame,
+                       text=f"← {label_anterior}",
+                       command=lambda s=status_anterior: mover(s)
+                       ).pack(side="left", padx=(0,6))
+
+        # Botao Avancar
+        if idx >= 0 and idx < len(ordem) - 1:
+            status_proximo = ordem[idx + 1]
+            label_proximo  = status_labels.get(status_proximo, status_proximo)
+            ttk.Button(btn_frame,
+                       text=f"{label_proximo} →",
+                       command=lambda s=status_proximo: mover(s)
+                       ).pack(side="left")
+
+        # Fechar
+        ttk.Button(pop, text="Fechar", command=pop.destroy).pack(pady=(4, 10))
 
     def _selecionar(self, pid, status):
         self._sel = (pid, status)

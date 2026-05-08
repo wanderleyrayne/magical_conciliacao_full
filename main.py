@@ -6,7 +6,7 @@ from ui.main_window import MainWindow
 
 
 def main():
-    # Aplica config_inicial.json na primeira execucao (sem precisar de Python instalado)
+    # Aplica config_inicial.json na primeira execucao
     try:
         from setup_inicial import aplicar_config_inicial
         aplicar_config_inicial()
@@ -32,8 +32,9 @@ def main():
 
     # Verifica atualizacoes silenciosamente 3 segundos apos iniciar
     try:
-        from updater import check_for_updates
-        root.after(3000, lambda: check_for_updates(root, silent=True))
+        from updater import verificar_em_background
+        from version import APP_VERSION
+        root.after(3000, lambda: verificar_em_background(root, APP_VERSION, silencioso=True))
     except Exception:
         pass
 

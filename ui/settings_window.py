@@ -594,17 +594,17 @@ class SettingsWindow:
         def _toggle_grupos():
             if self._grupos_expandido.get():
                 grupos_content.pack(fill="x", padx=4, pady=(0, 4))
-                btn_toggle.config(text="▲ Grupos WhatsApp por Casa")
+                btn_toggle.config(text="▲ Grupos WhatsApp por Casa (recolher)")
             else:
                 grupos_content.pack_forget()
-                btn_toggle.config(text="▼ Grupos WhatsApp por Casa")
+                btn_toggle.config(text="▼ Grupos WhatsApp por Casa (expandir)")
 
         grupos_outer = tk.Frame(scroll_frame, relief="groove", bd=1)
         grupos_outer.pack(fill="x", padx=10, pady=(0, 6))
 
         btn_toggle = tk.Button(
             grupos_outer,
-            text="▼ Grupos WhatsApp por Casa",
+            text="▼ Grupos WhatsApp por Casa (expandir)",
             anchor="w", relief="flat", bg="#f8fafc",
             fg="#1e293b", font=("Arial", 9, "bold"),
             command=lambda: [
@@ -617,7 +617,7 @@ class SettingsWindow:
         grupos_content = tk.Frame(grupos_outer, padx=6, pady=4)
 
         tk.Label(grupos_content,
-                 text="ID do grupo: 120363xxxxxxxx@g.us  — ",
+                 text="ID do grupo: 120363xxxxxxxx@g.us  —  use listar_grupos.py para obter",
                  fg="#64748b", font=("Arial", 8)).pack(anchor="w", pady=(0, 4))
 
         self._grupo_vars = {}
@@ -763,8 +763,9 @@ class SettingsWindow:
         # Botão verificar atualizações — lado esquerdo
         def _check_updates():
             try:
-                from updater import check_for_updates
-                check_for_updates(self.top, silent=False)
+                from updater import verificar_em_background
+                from version import APP_VERSION
+                verificar_em_background(self.top, APP_VERSION, silencioso=False)
             except Exception as exc:
                 from tkinter import messagebox
                 messagebox.showerror("Erro", f"Updater indisponível:\n{exc}",
