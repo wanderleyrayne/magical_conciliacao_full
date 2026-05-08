@@ -100,7 +100,7 @@ class Notificador:
             f"Enviado por: {enviado_por}\n"
             f"Itens: {total_itens} despesas\n"
             f"Total: {self._brl(valor_total)}\n\n"
-            f"Acesse o sistema para lan\u00e7ar no ERP."
+            f"Acesse o WorkFlow para Lançar no ERP."
         )
 
     def msg_erp_lancado(self, casa: str, planilha: str,
@@ -108,13 +108,13 @@ class Notificador:
                          ok: int, erros: int) -> str:
         status = "com sucesso" if erros == 0 else f"com {erros} erro(s)"
         return (
-            f"*Magical \u2014 Despesas Lan\u00e7adas no MeEventos*\n\n"
+            f"*Magical \u2014 Despesas Lan\u00e7adas MeEventos*\n\n"
             f"Casa: {casa}\n"
             f"Planilha: {planilha}\n"
             f"Lan\u00e7ado por: {lancado_por}\n"
             f"Total: {self._brl(valor_total)}\n"
             f"Resultado: {ok} lan\u00e7ados {status}\n\n"
-            f"CNAB dispon\u00edvel para gera\u00e7\u00e3o."
+            f"CNAB disponivel para importação."
         )
 
     def msg_aguardando_aprovacao(self, casa: str, valor_total: float,
