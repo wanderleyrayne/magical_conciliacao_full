@@ -1,32 +1,28 @@
 """
-ui/erp_history_window.py — Histórico de lançamentos enviados ao ERP via API.
-
-Exibe: parceiro, planilha, data/hora, total de linhas, enviados, erros,
-valor total, status, ID do lançamento e detalhes de cada item.
+ui/erp_history_window.py — Historico de lancamentos enviados ao ERP via API.
 """
 import tkinter as tk
 from tkinter import ttk, messagebox
 import json
+from pathlib import Path
 
 
 class ErpHistoryWindow:
     def __init__(self, master, repo):
         self.repo = repo
         self.win  = tk.Toplevel(master)
-        self.win.title("Histórico de Lançamentos no ERP")
+        self.win.title("Historico de Lancamentos no ERP")
         self.win.geometry("1100x620")
         self.win.resizable(True, True)
         self._build()
 
     def _build(self):
-        # Header
         hdr = tk.Frame(self.win, bg="#1e293b")
         hdr.pack(fill="x")
-        tk.Label(hdr, text="Histórico de Lançamentos — ERP MeEventos",
+        tk.Label(hdr, text="Historico de Lancamentos — ERP MeEventos",
                  fg="white", bg="#1e293b",
                  font=("Arial", 11, "bold")).pack(side="left", padx=12, pady=10)
 
-        # Filtros
         fil = tk.Frame(self.win)
         fil.pack(fill="x", padx=10, pady=(8, 0))
 
@@ -54,23 +50,20 @@ class ErpHistoryWindow:
             self.data_var.set(""), self._load_batches()
         )).pack(side="left")
 
-        # Filtro simulação
         self.mostrar_simulacao = tk.BooleanVar(value=False)
-        ttk.Checkbutton(fil, text="Mostrar simulações",
+        ttk.Checkbutton(fil, text="Mostrar simulacoes",
                         variable=self.mostrar_simulacao,
                         command=self._load_batches).pack(side="left", padx=(16,0))
 
-        ttk.Button(fil, text="↺ Atualizar",
+        ttk.Button(fil, text="Atualizar",
                    command=self._load_batches).pack(side="left", padx=8)
 
         self.lbl_total = tk.Label(fil, text="", font=("Arial", 9, "bold"))
         self.lbl_total.pack(side="right")
 
-        # Painel principal — batches (acima) + itens (abaixo)
         pane = tk.PanedWindow(self.win, orient="vertical", sashrelief="flat")
         pane.pack(fill="both", expand=True, padx=10, pady=8)
 
-        # ── Tabela de batches ──────────────────────────────────────────────
         top_f = tk.LabelFrame(pane, text="Lotes enviados")
         pane.add(top_f, minsize=200)
 
@@ -105,11 +98,11 @@ class ErpHistoryWindow:
         self.batch_tree.tag_configure("sim",  background="#e0f2fe")
         self.batch_tree.bind("<<TreeviewSelect>>", self._on_batch_select)
 
-        # ── Tabela de itens ────────────────────────────────────────────────
         bot_f = tk.LabelFrame(pane, text="Itens do lote selecionado")
         pane.add(bot_f, minsize=150)
 
-        item_cols = ("linha","parceiro","status","id_api","id_evento","categoria","valor","descricao","mensagem")
+        item_cols = ("linha","parceiro","status","id_api","id_evento",
+                     "categoria","valor","descricao","mensagem")
         self.item_tree = ttk.Treeview(bot_f, columns=item_cols,
                                        show="headings", height=6)
         for col, hd, w in [
@@ -120,7 +113,7 @@ class ErpHistoryWindow:
             ("id_evento", "ID Evento",  80),
             ("categoria", "Categoria", 200),
             ("valor",     "Valor",      90),
-            ("descricao", "Descrição", 220),
+            ("descricao", "Descricao", 220),
             ("mensagem",  "Mensagem",  160),
         ]:
             self.item_tree.heading(col, text=hd)
@@ -137,13 +130,15 @@ class ErpHistoryWindow:
         self.item_tree.tag_configure("SIMULADO", background="#e0f2fe")
         self.item_tree.tag_configure("ERRO_API", background="#f8d7da")
 
-        # Footer
+        # Footer com botao PDF
         ft = tk.Frame(self.win, padx=10, pady=8)
         ft.pack(fill="x")
         tk.Label(ft, text="Duplo-clique em um item para ver o payload JSON completo.",
                  fg="#64748b", font=("Arial", 8)).pack(side="left")
         ttk.Button(ft, text="Fechar",
                    command=self.win.destroy).pack(side="right")
+        ttk.Button(ft, text="📄 Gerar PDF",
+                   command=self._gerar_pdf_lote).pack(side="right", padx=6)
 
         self._load_batches()
 
@@ -166,8 +161,8 @@ class ErpHistoryWindow:
             messagebox.showerror("Erro", str(exc), parent=self.win)
             return
 
-        # Popula filtro de parceiros
-        parceiros = sorted({b.get("partner_name","") for b in batches if b.get("partner_name")})
+        parceiros = sorted({b.get("partner_name","") for b in batches
+                            if b.get("partner_name")})
         self.cb_parceiro["values"] = ["TODOS"] + parceiros
 
         filtro = self.parceiro_var.get()
@@ -175,7 +170,6 @@ class ErpHistoryWindow:
             batches = [b for b in batches
                        if b.get("partner_name","").upper() == filtro.upper()]
 
-        # Filtro de data
         data_filtro = self.data_var.get().strip()
         if data_filtro:
             try:
@@ -187,7 +181,6 @@ class ErpHistoryWindow:
             except Exception:
                 pass
 
-        # Filtro simulação
         if not self.mostrar_simulacao.get():
             batches = [b for b in batches if not b.get("dry_run")]
 
@@ -195,14 +188,12 @@ class ErpHistoryWindow:
 
         for b in batches:
             bid      = b.get("id", "")
-            # Data/hora do banco — campo created_at
             created  = str(b.get("created_at") or "")[:16].replace("T"," ")
             parceiro = b.get("partner_name", "")
             planilha = b.get("file_name", "")
             total    = b.get("total_rows", 0)
-            dry      = "Simulação" if b.get("dry_run") else "Real"
+            dry      = "Simulacao" if b.get("dry_run") else "Real"
 
-            # Conta enviados/simulados/erros pelos itens reais
             try:
                 items    = self.repo.get_erp_launch_items(bid)
                 enviados = sum(1 for it in items if it.get("status") == "LANCADO")
@@ -214,10 +205,10 @@ class ErpHistoryWindow:
                     if it.get("status") in ("LANCADO", "SIMULADO")
                 )
             except Exception:
-                enviados = b.get("total_enviado", 0)
-                simulados= b.get("total_simulado", 0)
-                erros    = b.get("total_erro", 0)
-                val      = 0.0
+                enviados  = b.get("total_enviado", 0)
+                simulados = b.get("total_simulado", 0)
+                erros     = b.get("total_erro", 0)
+                val       = 0.0
 
             total_valor += val
             tag = "sim" if b.get("dry_run") else ("erro" if erros > 0 else "ok")
@@ -252,14 +243,12 @@ class ErpHistoryWindow:
                 payload  = json.loads(it.get("payload_json") or "{}")
                 valor    = self._brl(it.get("valor") or payload.get("valor", 0))
                 desc     = str(it.get("descricao") or payload.get("descricao") or "")[:60]
-                # Categoria: nome se disponível, senão ID
                 cat_nome = str(it.get("categoria") or "")
                 cat_id   = str(it.get("id_categoria") or payload.get("idcategoria") or "")
                 categoria_display = (
                     f"{cat_nome} [{cat_id}]" if cat_nome and cat_id else
                     cat_nome or cat_id or "—"
                 )
-                # ID Evento: valor salvo ou do payload
                 id_evento = str(it.get("id_evento") or payload.get("idevento") or "—")
             except Exception:
                 valor = "—"
@@ -284,7 +273,6 @@ class ErpHistoryWindow:
         sel = self.item_tree.selection()
         if not sel:
             return
-
         batch_sel = self.batch_tree.selection()
         if not batch_sel:
             return
@@ -303,12 +291,11 @@ class ErpHistoryWindow:
         pop.geometry("560x420")
 
         try:
-            payload      = json.loads(it.get("payload_json") or "{}")
-            txt_content  = json.dumps(payload, indent=2, ensure_ascii=False)
+            payload     = json.loads(it.get("payload_json") or "{}")
+            txt_content = json.dumps(payload, indent=2, ensure_ascii=False)
         except Exception:
-            txt_content  = str(it.get("payload_json",""))
+            txt_content = str(it.get("payload_json",""))
 
-        # Adiciona info extra acima do JSON
         info = (
             f"Status:     {it.get('status','')}\n"
             f"ID API:     {it.get('id_api','—')}\n"
@@ -333,3 +320,195 @@ class ErpHistoryWindow:
 
         ttk.Button(bf, text="Copiar JSON", command=copiar).pack(side="left")
         ttk.Button(bf, text="Fechar", command=pop.destroy).pack(side="right")
+
+    # =========================================================================
+    # GERAR PDF
+    # =========================================================================
+
+    def _gerar_pdf_lote(self):
+        """Gera PDF com os itens do lote selecionado."""
+        sel = self.batch_tree.selection()
+        if not sel:
+            messagebox.showwarning("PDF", "Selecione um lote primeiro.",
+                                   parent=self.win)
+            return
+
+        try:
+            batch_id = int(sel[0])
+            vals     = self.batch_tree.item(sel[0], "values")
+            parceiro = vals[2] if len(vals) > 2 else ""
+            data_str = vals[1] if len(vals) > 1 else ""
+
+            items = self.repo.get_erp_launch_items(batch_id)
+            if not items:
+                messagebox.showwarning("PDF",
+                    "Nenhum item encontrado neste lote.", parent=self.win)
+                return
+
+            self._gerar_pdf_pagamentos(parceiro, data_str, items)
+
+        except Exception as e:
+            messagebox.showerror("Erro", f"Erro ao gerar PDF:\n{e}",
+                                 parent=self.win)
+
+    def _gerar_pdf_pagamentos(self, parceiro, data_str, itens):
+        """Gera PDF de pagamentos e abre dialogo para salvar."""
+        import re
+        from tkinter import filedialog
+        from datetime import datetime
+
+        # Instala reportlab se necessario
+        try:
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib import colors
+            from reportlab.lib.units import cm
+            from reportlab.platypus import (SimpleDocTemplate, Table,
+                                             TableStyle, Paragraph, Spacer)
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+        except ImportError:
+            import subprocess, sys
+            messagebox.showinfo("Instalando",
+                "Instalando reportlab, aguarde...", parent=self.win)
+            subprocess.run([sys.executable, "-m", "pip", "install",
+                           "reportlab", "--break-system-packages"],
+                          capture_output=True)
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib import colors
+            from reportlab.lib.units import cm
+            from reportlab.platypus import (SimpleDocTemplate, Table,
+                                             TableStyle, Paragraph, Spacer)
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+
+        # Calcula total apenas dos lancados/simulados
+        total = 0.0
+        for item in itens:
+            try:
+                payload = json.loads(item.get("payload_json") or "{}")
+                if item.get("status") in ("LANCADO", "SIMULADO"):
+                    total += abs(float(payload.get("valor", 0)))
+            except Exception:
+                pass
+
+        total_fmt = self._brl(total)
+
+        # Formata data
+        try:
+            raw = data_str[:16].replace("T"," ")
+            dt  = datetime.strptime(raw, "%Y-%m-%d %H:%M")
+        except Exception:
+            try:
+                dt = datetime.strptime(data_str[:10], "%d/%m/%Y")
+            except Exception:
+                dt = datetime.now()
+
+        data_fmt    = dt.strftime("%d.%m")
+        data_extenso = dt.strftime("%d/%m/%Y")
+
+        # Nome do arquivo: PAGAMENTOS CONTEMPORANEO 11.05 - R$ 82.023,31.pdf
+        total_nome = total_fmt.replace("/","").replace("\\","")
+        nome_base  = f"PAGAMENTOS {parceiro.upper()} {data_fmt} - {total_fmt}.pdf"
+        nome_base  = re.sub(r'[<>:"|?*]', '', nome_base)
+
+        destino = filedialog.asksaveasfilename(
+            title="Salvar PDF de pagamentos",
+            initialfile=nome_base,
+            defaultextension=".pdf",
+            filetypes=[("PDF", "*.pdf"), ("Todos", "*.*")],
+            parent=self.win,
+        )
+        if not destino:
+            return
+
+        # Monta PDF
+        doc = SimpleDocTemplate(
+            destino, pagesize=A4,
+            rightMargin=1.5*cm, leftMargin=1.5*cm,
+            topMargin=1.5*cm, bottomMargin=1.5*cm,
+        )
+        styles = getSampleStyleSheet()
+
+        s_titulo = ParagraphStyle("titulo", parent=styles["Heading1"],
+                                   fontSize=13, textColor=colors.HexColor("#0f172a"),
+                                   spaceAfter=2)
+        s_sub    = ParagraphStyle("sub", parent=styles["Normal"],
+                                   fontSize=9, textColor=colors.HexColor("#475569"),
+                                   spaceAfter=10)
+        s_rod    = ParagraphStyle("rod", parent=styles["Normal"],
+                                   fontSize=7, textColor=colors.HexColor("#94a3b8"),
+                                   alignment=TA_CENTER)
+
+        story = []
+        story.append(Paragraph("Relatorio de Pagamentos", s_titulo))
+        story.append(Paragraph(
+            f"Casa: {parceiro}   |   Data: {data_extenso}   |   Total: {total_fmt}",
+            s_sub))
+
+        # Tabela de itens
+        col_w = [6.5*cm, 4*cm, 2*cm, 2.5*cm, 2.0*cm]
+        header = ["Descricao / Favorecido", "Categoria", "ID Evento", "Valor", "Status"]
+        rows   = [header]
+
+        for item in itens:
+            try:
+                payload   = json.loads(item.get("payload_json") or "{}")
+                desc      = str(item.get("descricao") or
+                                payload.get("descricao",""))[:55]
+                cat       = str(item.get("categoria",""))[:22]
+                id_evento = str(payload.get("idevento","") or "—")
+                valor     = self._brl(item.get("valor") or payload.get("valor",0))
+                status    = str(item.get("status",""))
+                rows.append([desc, cat, id_evento, valor, status])
+            except Exception:
+                pass
+
+        # Linha de total
+        rows.append(["", "TOTAL GERAL", "", total_fmt, ""])
+
+        AZUL     = colors.HexColor("#0f172a")
+        CINZA    = colors.HexColor("#f8fafc")
+        VERDE    = colors.HexColor("#dff3e3")
+        AZUL_L   = colors.HexColor("#dbeafe")
+        BORDA    = colors.HexColor("#e2e8f0")
+
+        tbl = Table(rows, colWidths=col_w, repeatRows=1)
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND",   (0, 0), (-1, 0), AZUL),
+            ("TEXTCOLOR",    (0, 0), (-1, 0), colors.white),
+            ("FONTNAME",     (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE",     (0, 0), (-1, 0), 9),
+            ("ALIGN",        (0, 0), (-1, 0), "CENTER"),
+            ("TOPPADDING",   (0, 0), (-1, 0), 7),
+            ("BOTTOMPADDING",(0, 0), (-1, 0), 7),
+            ("FONTSIZE",     (0, 1), (-1,-2), 8),
+            ("ROWBACKGROUNDS",(0,1), (-1,-2), [colors.white, CINZA]),
+            ("GRID",         (0, 0), (-1,-1), 0.4, BORDA),
+            ("VALIGN",       (0, 0), (-1,-1), "MIDDLE"),
+            ("TOPPADDING",   (0, 1), (-1,-2), 4),
+            ("BOTTOMPADDING",(0, 1), (-1,-2), 4),
+            ("ALIGN",        (3, 1), (3,-1), "RIGHT"),
+            ("ALIGN",        (2, 0), (2, 0), "CENTER"),
+            ("BACKGROUND",   (0,-1), (-1,-1), AZUL_L),
+            ("FONTNAME",     (0,-1), (-1,-1), "Helvetica-Bold"),
+            ("FONTSIZE",     (0,-1), (-1,-1), 9),
+            ("ALIGN",        (1,-1), (3,-1), "RIGHT"),
+            ("TOPPADDING",   (0,-1), (-1,-1), 6),
+            ("BOTTOMPADDING",(0,-1), (-1,-1), 6),
+        ]))
+
+        story.append(tbl)
+        story.append(Spacer(1, 0.4*cm))
+        story.append(Paragraph(
+            f"Gerado em {datetime.now().strftime('%d/%m/%Y %H:%M')} | Magical Conciliacao",
+            s_rod))
+
+        doc.build(story)
+
+        messagebox.showinfo("PDF Gerado",
+            f"PDF salvo com sucesso!\n\n{Path(destino).name}",
+            parent=self.win)
+
+        import os
+        if os.name == "nt":
+            os.startfile(destino)

@@ -779,9 +779,6 @@ class ErpLancamentoWindow:
 
             # Avisos
             avisos = []
-            if passadas:
-                avisos.append(
-                    f"{len(passadas)} linha(s) com data passada foram ignoradas.")
             if sem_data is not None and not sem_data.empty:
                 try:
                     vals_sem = sem_data[self.COL_VALOR].sum()
@@ -797,7 +794,8 @@ class ErpLancamentoWindow:
             self._futuras_info = (len(futuras),
                 sorted(set(str(com_data.loc[i, self.COL_DATA])[:10]
                            for i in futuras))) if futuras else None
-            self._data_future = data_future
+            self._data_future  = data_future
+            self._data_passada = com_data.loc[passadas].copy() if passadas else pd.DataFrame()
 
             # Junta validas + sem_data (sem_data ficará bloqueada no validate_row)
             data_final = pd.concat([data_valida, sem_data]).reset_index(drop=True)
@@ -858,6 +856,11 @@ class ErpLancamentoWindow:
         # Avisos de carregamento
         for av in getattr(self, "_avisos_carregamento", []):
             messagebox.showwarning("Planilha", av, parent=self.top)
+
+        # Pergunta sobre passadas — mostra lista com checkboxes
+        data_passada = getattr(self, "_data_passada", None)
+        if data_passada is not None and not data_passada.empty:
+            self._popup_selecionar_passadas(data_passada)
 
         # Pergunta sobre futuras
         futuras_info = getattr(self, "_futuras_info", None)
@@ -1156,6 +1159,153 @@ class ErpLancamentoWindow:
         return {ErpLancamentoWindow.STATUS_OK: 0,
                 ErpLancamentoWindow.STATUS_ATENCAO: 1,
                 ErpLancamentoWindow.STATUS_BLOQUEIO: 2}.get(s, 0)
+
+    # =========================================================================
+    # POPUP DATAS PASSADAS
+    # =========================================================================
+
+    def _popup_selecionar_passadas(self, df_passadas: pd.DataFrame):
+        """Popup com checkboxes para selecionar linhas passadas a incluir hoje."""
+        from datetime import date as _date
+        hoje_str = _date.today().strftime("%Y-%m-%d")
+        hoje_fmt = _date.today().strftime("%d/%m/%Y")
+
+        pop = tk.Toplevel(self.top)
+        pop.title("Datas Retroativas")
+        pop.geometry("680x420")
+        pop.resizable(True, True)
+        pop.grab_set()
+
+        # Header
+        hdr = tk.Frame(pop, bg="#92400e", pady=10)
+        hdr.pack(fill="x")
+        tk.Label(hdr, text=f"⚠  {len(df_passadas)} linha(s) com data retroativa",
+                 bg="#92400e", fg="white",
+                 font=("Arial", 11, "bold")).pack()
+        tk.Label(hdr,
+                 text=f"Marque as que deseja lançar com a data de hoje ({hoje_fmt})",
+                 bg="#92400e", fg="#fef3c7",
+                 font=("Arial", 9)).pack()
+
+        # Lista com checkboxes
+        list_frame = tk.Frame(pop)
+        list_frame.pack(fill="both", expand=True, padx=10, pady=8)
+
+        # Cabecalho
+        cab = tk.Frame(list_frame, bg="#f1f5f9")
+        cab.pack(fill="x")
+        tk.Label(cab, text="", width=3, bg="#f1f5f9").pack(side="left")
+        for txt, w in [("Data orig.", 90), ("Categoria", 160),
+                        ("Descrição", 220), ("Valor", 90)]:
+            tk.Label(cab, text=txt, bg="#f1f5f9", fg="#475569",
+                     font=("Arial", 8, "bold"), width=w//7,
+                     anchor="w").pack(side="left", padx=2)
+
+        # Scroll
+        canvas = tk.Canvas(list_frame, highlightthickness=0)
+        sb = ttk.Scrollbar(list_frame, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        canvas.pack(fill="both", expand=True)
+
+        inner = tk.Frame(canvas)
+        canvas.create_window((0,0), window=inner, anchor="nw")
+        inner.bind("<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+        vars_check = []
+        idxs       = []
+
+        for _, row in df_passadas.iterrows():
+            try:
+                data_orig = pd.to_datetime(
+                    row[self.COL_DATA], dayfirst=True).strftime("%d/%m/%Y")
+            except Exception:
+                data_orig = str(row.get(self.COL_DATA, ""))[:10]
+
+            cat   = str(row.get(self.COL_CATEGORIA) or
+                        row.get(self.COL_CATEGORIA_ALT) or "")[:22]
+            desc  = str(row.get(self.COL_LANCAMENTO) or
+                        row.get(self.COL_DETALHE) or "")[:30]
+            try:
+                val = abs(float(str(row.get(self.COL_VALOR,0))
+                    .replace(",",".").replace("R$","").strip()))
+                val_fmt = f"R$ {val:,.2f}".replace(",","X").replace(".",",").replace("X",".")
+            except Exception:
+                val_fmt = "—"
+
+            f = tk.Frame(inner, pady=2)
+            f.pack(fill="x", padx=4)
+
+            var = tk.BooleanVar(value=False)
+            vars_check.append(var)
+            idxs.append(row.name)
+
+            ttk.Checkbutton(f, variable=var).pack(side="left")
+            tk.Label(f, text=data_orig, fg="#b45309",
+                     font=("Arial", 9), width=10, anchor="w").pack(side="left")
+            tk.Label(f, text=cat, font=("Arial", 9),
+                     width=22, anchor="w").pack(side="left", padx=2)
+            tk.Label(f, text=desc, font=("Arial", 9),
+                     width=30, anchor="w").pack(side="left", padx=2)
+            tk.Label(f, text=val_fmt, font=("Arial", 9, "bold"),
+                     fg="#065f46", width=11, anchor="e").pack(side="left")
+
+        # Selecionar todos
+        sel_frame = tk.Frame(pop)
+        sel_frame.pack(fill="x", padx=10)
+
+        def _sel_todos():
+            for v in vars_check:
+                v.set(True)
+        def _des_todos():
+            for v in vars_check:
+                v.set(False)
+
+        ttk.Button(sel_frame, text="Marcar todas",
+                   command=_sel_todos).pack(side="left", padx=4)
+        ttk.Button(sel_frame, text="Desmarcar todas",
+                   command=_des_todos).pack(side="left")
+
+        # Rodape
+        rod = tk.Frame(pop, pady=8)
+        rod.pack(fill="x", padx=10)
+
+        tk.Label(rod,
+                 text=f"As selecionadas serão lançadas com data: {hoje_fmt}",
+                 fg="#065f46", font=("Arial", 9, "italic")).pack(side="left")
+
+        def _confirmar():
+            selecionadas = [idxs[i] for i, v in enumerate(vars_check) if v.get()]
+            if selecionadas:
+                # Cria copia com data substituida por hoje
+                df_sel = df_passadas.loc[selecionadas].copy()
+                df_sel[self.COL_DATA] = pd.Timestamp.today().normalize()
+                extra = self._validate_all(df_sel.reset_index(drop=True))
+                self.df_preview = pd.concat(
+                    [self.df_preview, extra], ignore_index=True)
+                self._refresh_preview()
+                # Atualiza totais
+                ok    = (self.df_preview["_status"] == self.STATUS_OK).sum()
+                atenc = (self.df_preview["_status"] == self.STATUS_ATENCAO).sum()
+                bloq  = (self.df_preview["_status"] == self.STATUS_BLOQUEIO).sum()
+                total_val = self.df_preview[
+                    self.df_preview["_status"].isin(
+                        [self.STATUS_OK, self.STATUS_ATENCAO])]["_valor"].sum()
+                total_val_fmt = (f"R$ {total_val:,.2f}"
+                    .replace(",","X").replace(".",",").replace("X","."))
+                self.summary_label.config(
+                    text=f"Total: {len(self.df_preview)}  |  ✓ {ok}  ⚠ {atenc}  ✗ {bloq}")
+                self.total_valor_label.config(
+                    text=f"Total a lançar: {total_val_fmt}")
+                if ok + atenc > 0:
+                    self.btn_lancar.config(state="normal")
+            pop.destroy()
+
+        ttk.Button(rod, text="Ignorar todas",
+                   command=pop.destroy).pack(side="right", padx=4)
+        ttk.Button(rod, text="Incluir selecionadas →",
+                   command=_confirmar).pack(side="right")
 
     # =========================================================================
     # PREVIEW

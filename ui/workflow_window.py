@@ -570,52 +570,127 @@ class WorkflowWindow:
                     GeradorCNAB240,
                     PIX_CHAVE_CPF, PIX_CHAVE_CNPJ,
                     PIX_CHAVE_EMAIL, PIX_CHAVE_EVP,
+                    PIX_CHAVE_CELULAR, _normalizar_chave_pix,
                 )
 
                 pagamentos = []
                 for _, row in df.iterrows():
                     try:
-                        v = str(row.get("VALOR",0)).replace("R$","").replace(" ","")
-                        if "," in v:
+                        v = str(row.get("VALOR",0) or "0").strip()
+                        v = v.replace("R$","").replace(" ","")
+                        if v.lower() in ("nan","none",""):
+                            continue
+                        if "," in v and "." in v:
                             v = v.replace(".","").replace(",",".")
+                        elif "," in v:
+                            v = v.replace(",",".")
                         vp = abs(float(v))
                         if vp <= 0:
                             continue
                     except Exception:
                         continue
 
-                    forma = str(row.get("FORMA_PGTO","PIX") or "PIX").upper()
-                    forma_cnab = "TED" if "TED" in forma else "CC" if "CC" in forma else "PIX"
+                    forma_raw = str(row.get("FORMA_PGTO","") or "").strip().upper()
 
-                    chave = str(row.get("PIX_CHAVE","") or row.get("CPF_CNPJ","") or "")
-                    if chave in ("nan","None",""):
+                    # Dados bancarios
+                    banco_col = str(row.get("BANCO","") or "").strip()
+                    agencia_col = str(row.get("AGENCIA","") or "").strip()
+                    conta_col = str(row.get("CONTA","") or "").strip()
+
+                    banco_num = _re.sub(r"\D","", banco_col)
+                    agencia_num = _re.sub(r"\D","", agencia_col)
+                    # Separa DV da conta ex: "3726-1" -> conta=3726, dac=1
+                    if "-" in conta_col:
+                        partes = conta_col.split("-")
+                        conta_num = _re.sub(r"\D","", partes[0])
+                        dac_num   = _re.sub(r"\D","", partes[-1]) if len(partes)>1 else "0"
+                    else:
+                        conta_num = _re.sub(r"\D","", conta_col)
+                        dac_num   = "0"
+
+                    tem_conta = bool(conta_num and conta_num not in ("0",""))
+                    tem_banco = bool(banco_num and banco_num not in ("0",""))
+
+                    # Chave PIX — limpa zeros e "nan"
+                    chave = str(row.get("PIX_CHAVE","") or "").strip()
+                    if chave in ("nan","None","0",""):
                         chave = ""
+                    # QR Code longo = EVP
+                    eh_qrcode = len(chave) > 40
 
+                    # Determina forma de pagamento
+                    # Regra: FORMA=TED/DOC/DEPOSITO/CC com conta bancaria -> TED/CC
+                    # Regra: tem PIX CHAVE valida -> PIX (mesmo se tiver conta)
+                    # Regra: sem chave e tem conta -> CC/TED
+                    eh_deposito = any(x in forma_raw for x in ("TED","DOC","DEPOSIT","TRANSFER","CC"))
+                    eh_pix_forma = any(x in forma_raw for x in ("PIX","")) or forma_raw in ("0","","PIX")
+
+                    if tem_conta and eh_deposito:
+                        # Forca TED/CC
+                        if banco_num in ("341","409") or banco_col.upper() in ("ITAU","ITAÚ"):
+                            banco_num = banco_num or "341"
+                            forma_cnab = "CC"
+                        else:
+                            forma_cnab = "TED"
+                        chave = ""  # nao usa chave PIX neste caso
+                    elif chave:
+                        forma_cnab = "PIX"
+                    elif tem_conta:
+                        # Sem chave PIX mas tem conta bancaria
+                        if banco_num in ("341","409") or banco_col.upper() in ("ITAU","ITAÚ"):
+                            banco_num = banco_num or "341"
+                            forma_cnab = "CC"
+                        else:
+                            forma_cnab = "TED"
+                    else:
+                        # Sem chave e sem conta — ignora
+                        continue
+
+                    # Detecta tipo de chave PIX
                     cpf = _re.sub(r"\D","", chave)
-                    if len(cpf) == 11:
+                    if not chave:
                         tipo = PIX_CHAVE_CPF
-                    elif len(cpf) == 14:
-                        tipo = PIX_CHAVE_CNPJ
+                        cpf  = ""
+                    elif eh_qrcode or "br.gov.bcb.pix" in chave.lower():
+                        tipo = PIX_CHAVE_EVP
+                        cpf  = chave
                     elif "@" in chave:
                         tipo = PIX_CHAVE_EMAIL
                         cpf  = chave
-                    elif chave:
+                    elif len(cpf) == 14:
+                        tipo = PIX_CHAVE_CNPJ
+                    elif chave.strip().startswith("(") or (
+                        len(cpf) in (10,11) and "." not in chave and "/" not in chave
+                        and not (chave.count("-") == 2 and "." in chave)):
+                        tipo = PIX_CHAVE_CELULAR
+                    elif len(cpf) == 11:
+                        tipo = PIX_CHAVE_CPF
+                    else:
                         tipo = PIX_CHAVE_EVP
                         cpf  = chave
-                    else:
-                        if forma_cnab == "PIX":
-                            continue
-                        tipo = PIX_CHAVE_CPF
+
+                    from datetime import date as _date_hoje
+                    # Data de pagamento: usa a data da planilha ou hoje
+                    data_pgto = str(row.get("DATA","") or "").strip()
+                    if not data_pgto or data_pgto in ("nan","None",""):
+                        data_pgto = _date_hoje.today().strftime("%Y-%m-%d")
+
+                    # Normaliza chave PIX
+                    chave_norm = _normalizar_chave_pix(chave, tipo) if chave else ""
+                    cpf_norm   = _re.sub(r"[^0-9]", "", chave) if tipo in ("01","02") else cpf
 
                     pagamentos.append({
-                        "nome": str(row.get("FAVORECIDO","FAVORECIDO") or "FAVORECIDO")[:30],
-                        "cpf_cnpj": cpf,
-                        "pix_chave": chave,
-                        "pix_tipo_chave": tipo,
-                        "valor": vp,
-                        "forma_pgto": forma_cnab,
-                        "banco_favorecido": "341",
-                        "agencia": "", "conta": "", "dac": "0", "data": "",
+                        "nome":            str(row.get("FAVORECIDO","FAVORECIDO") or "FAVORECIDO")[:30],
+                        "cpf_cnpj":        cpf_norm,
+                        "pix_chave":       chave_norm,
+                        "pix_tipo_chave":  tipo,
+                        "valor":           vp,
+                        "forma_pgto":      forma_cnab,
+                        "banco_favorecido": banco_num or "341",
+                        "agencia":         agencia_num,
+                        "conta":           conta_num,
+                        "dac":             dac_num,
+                        "data":            data_pgto,
                     })
 
                 if not pagamentos:
@@ -627,8 +702,52 @@ class WorkflowWindow:
                 downloads = Path.home() / "Downloads" / "CNAB" / casa
                 downloads.mkdir(parents=True, exist_ok=True)
 
-                config = {"cnpj":"00000000000000","agencia":"00000",
-                          "conta":"000000000","dac":"0","nome":"RAYNE TECNOLOGIA"}
+                # Busca dados bancarios da casa no banco local
+                import sqlite3 as _sqlite3, json as _json2
+                def _get_conta(parceiro):
+                    try:
+                        with _sqlite3.connect(self.db_path) as conn:
+                            row = conn.execute(
+                                "SELECT dados FROM contas_bancarias WHERE parceiro=? LIMIT 1",
+                                (parceiro,)).fetchone()
+                            return _json2.loads(row[0]) if row and row[0] else {}
+                    except Exception:
+                        return {}
+
+                # Busca CNPJ do parceiro
+                def _get_cnpj(parceiro):
+                    try:
+                        from core.partner_rules import PARTNERS
+                        for p in PARTNERS:
+                            if p["partner_name"].upper() == parceiro.upper():
+                                return p.get("cnpj","").replace(".","").replace("/","").replace("-","")
+                    except Exception:
+                        pass
+                    return "00000000000000"
+
+                conta_dados = _get_conta(casa)
+                cnpj        = _get_cnpj(casa)
+                agencia     = conta_dados.get("agencia", "00000")
+                conta_num   = conta_dados.get("conta", "000000000")
+                dac         = conta_dados.get("dac", "0")
+
+                # Remove tracos e espacos da conta (ex: "98707-4" -> "987074")
+                # Se o usuario incluiu o DV na conta, separa o ultimo digito
+                import re as _re2
+                conta_limpa = _re2.sub(r"[^0-9]", "", str(conta_num))
+                # Se nao tem DAC configurado e conta tem DV junto
+                if (not dac or dac == "0") and "-" in str(conta_num):
+                    partes = str(conta_num).split("-")
+                    conta_limpa = _re2.sub(r"\D", "", partes[0])
+                    dac = _re2.sub(r"\D", "", partes[-1]) if len(partes) > 1 else "0"
+
+                config = {
+                    "cnpj":    cnpj,
+                    "agencia": agencia,
+                    "conta":   conta_limpa,
+                    "dac":     dac,
+                    "nome":    casa.upper()[:30],
+                }
                 g = GeradorCNAB240(config)
                 for p in pagamentos:
                     g.adicionar(p)
