@@ -51,6 +51,53 @@ class Notificador:
             {"number": grupo_id, "text": mensagem},
         )
 
+    def enviar_documento(self, numero: str, caminho_arquivo: str,
+                          caption: str = "", nome_arquivo: str = "") -> dict:
+        """Envia arquivo PDF/documento via WhatsApp (Evolution API)."""
+        import base64
+        from pathlib import Path
+
+        try:
+            path = Path(caminho_arquivo)
+            if not path.exists():
+                log.error(f"[WHATSAPP] Arquivo nao encontrado: {caminho_arquivo}")
+                return {"ok": False, "erro": "Arquivo nao encontrado"}
+
+            with open(path, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode("utf-8")
+
+            nome = nome_arquivo or path.name
+            # Detecta mimetype
+            ext = path.suffix.lower()
+            mime = {
+                ".pdf":  "application/pdf",
+                ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                ".xls":  "application/vnd.ms-excel",
+                ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            }.get(ext, "application/octet-stream")
+
+            # Garante formato correto do numero
+            if not numero.endswith("@g.us") and not numero.endswith("@s.whatsapp.net"):
+                num_limpo = re.sub(r"\D", "", numero)
+                numero = f"{num_limpo}@s.whatsapp.net"
+
+            payload = {
+                "number":   numero,
+                "mediatype": "document",
+                "mimetype": mime,
+                "caption":  caption,
+                "fileName": nome,
+                "media":    b64,
+            }
+
+            return self._post(
+                f"message/sendMedia/{self.instancia}",
+                payload,
+            )
+        except Exception as e:
+            log.error(f"[WHATSAPP] Erro ao enviar documento: {e}")
+            return {"ok": False, "erro": str(e)}
+
     def listar_grupos(self) -> list:
         try:
             resp = requests.get(
@@ -100,7 +147,7 @@ class Notificador:
             f"Enviado por: {enviado_por}\n"
             f"Itens: {total_itens} despesas\n"
             f"Total: {self._brl(valor_total)}\n\n"
-            f"Acesse o WorkFlow para Lançar no ERP."
+            f"Acesse o sistema para lan\u00e7ar no ERP."
         )
 
     def msg_erp_lancado(self, casa: str, planilha: str,
@@ -114,7 +161,7 @@ class Notificador:
             f"Lan\u00e7ado por: {lancado_por}\n"
             f"Total: {self._brl(valor_total)}\n"
             f"Resultado: {ok} lan\u00e7ados {status}\n\n"
-            f"CNAB disponivel para importação."
+            f"CNAB Disponivel para importação."
         )
 
     def msg_aguardando_aprovacao(self, casa: str, valor_total: float,

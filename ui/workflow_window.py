@@ -492,16 +492,80 @@ class WorkflowWindow:
 
         def _do():
             try:
+                # Busca itens do lote para gerar PDF
+                itens_pdf = []
+                try:
+                    import sqlite3 as _sq, json as _json
+                    with _sq.connect(self.db_path) as _conn:
+                        _rows = _conn.execute(
+                            "SELECT payload_json, descricao, categoria, valor "
+                            "FROM erp_launch_items "
+                            "WHERE partner_name=? AND status IN ('LANCADO','SIMULADO') "
+                            "ORDER BY id DESC LIMIT 100",
+                            (casa,)
+                        ).fetchall()
+                    for r in _rows:
+                        try:
+                            p = _json.loads(r[0] or "{}")
+                            itens_pdf.append({
+                                "_descricao": r[1] or p.get("descricao",""),
+                                "_categoria": r[2] or "",
+                                "_valor":     float(r[3] or p.get("valor",0)),
+                                "_payload":   p,
+                            })
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+                # Gera PDF
+                pdf_path = None
+                if itens_pdf:
+                    try:
+                        pdf_path = self._gerar_pdf_lote(
+                            pid, casa, meu_nome, itens_pdf)
+                    except Exception as ep:
+                        print(f"[WORKFLOW] PDF erro: {ep}")
+
+                # Atualiza status
                 self.cloud.atualizar_status(
                     pid, "ag_aprov_operacional", lancado_por=meu_nome)
-                self._notificar_grupo_casa(casa,
-                    f"*Magical - Lancamento Concluido*\n\n"
-                    f"Casa: {casa}\n"
-                    f"Lancado por: {meu_nome}\n\n"
-                    f"Para aprovar responda:\n"
-                    f"APROVAR OPERACIONAL {casa.upper()}\n\n"
-                    f"Para reprovar responda:\n"
-                    f"REPROVAR OPERACIONAL {casa.upper()} [motivo]")
+
+                # Envia PDF + botoes para grupo da casa
+                grupo_id = self._get_cfg(
+                    f"grupo_{casa.lower().replace(' ','_')}")
+                evo_url  = self._get_cfg("evo_url")
+                evo_key  = self._get_cfg("evo_key")
+                instancia= self._get_cfg("evo_instancia", "wanderley")
+
+                if evo_url and grupo_id:
+                    from notificador import Notificador
+                    import os
+                    n = Notificador(evo_url, evo_key, instancia)
+                    if n.status_instancia().get("conectado"):
+                        if pdf_path and os.path.exists(pdf_path):
+                            n.enviar_documento(
+                                grupo_id, pdf_path,
+                                caption=(
+                                    f"Magical - Relatorio de Pagamentos\n"
+                                    f"Casa: {casa} | Lancado por: {meu_nome}"
+                                ),
+                                nome_arquivo=os.path.basename(pdf_path)
+                            )
+                        self._notificar_grupo_casa_botoes(
+                            casa=casa,
+                            titulo="Magical - Lancamento Concluido",
+                            corpo=(
+                                f"Casa: {casa}\n"
+                                f"Lancado por: {meu_nome}\n\n"
+                                f"Deseja aprovar o lancamento?"
+                            ),
+                            botoes=[
+                                {"id": f"sim_op_{casa.lower()}", "text": "Sim"},
+                                {"id": f"nao_op_{casa.lower()}", "text": "Nao"},
+                            ]
+                        )
+
                 self.win.after(0, self._load)
             except Exception as e:
                 self.win.after(0, lambda: messagebox.showerror(
@@ -815,6 +879,134 @@ class WorkflowWindow:
                     "Erro", str(e), parent=self.win))
 
         threading.Thread(target=_do, daemon=True).start()
+
+
+    def _gerar_pdf_lote(self, pid, casa, meu_nome, itens):
+        """Gera PDF do lote de pagamentos. Retorna caminho do arquivo."""
+        import tempfile, re
+        from datetime import datetime
+        from pathlib import Path
+
+        try:
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib import colors
+            from reportlab.lib.units import cm
+            from reportlab.platypus import (SimpleDocTemplate, Table,
+                                             TableStyle, Paragraph, Spacer)
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.enums import TA_CENTER
+        except ImportError:
+            import subprocess, sys
+            subprocess.run([sys.executable, "-m", "pip", "install",
+                           "reportlab", "--break-system-packages"],
+                          capture_output=True)
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib import colors
+            from reportlab.lib.units import cm
+            from reportlab.platypus import (SimpleDocTemplate, Table,
+                                             TableStyle, Paragraph, Spacer)
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.enums import TA_CENTER
+
+        total = sum(abs(float(it.get("_valor", 0))) for it in itens
+                    if isinstance(it, dict))
+
+        def brl(v):
+            try:
+                return (f"R$ {abs(float(v)):,.2f}"
+                        .replace(",","X").replace(".",",").replace("X","."))
+            except Exception:
+                return "R$ 0,00"
+
+        hoje         = datetime.now()
+        total_fmt    = brl(total)
+        data_fmt     = hoje.strftime("%d.%m")
+        data_extenso = hoje.strftime("%d/%m/%Y")
+
+        nome_base = f"PAGAMENTOS {casa.upper()} {data_fmt} - {total_fmt}.pdf"
+        nome_base = re.sub(r'[<>:"/\\|?*]', '', nome_base)
+
+        tmp_dir = Path(tempfile.gettempdir()) / "magical_pdfs"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        destino = str(tmp_dir / nome_base)
+
+        doc = SimpleDocTemplate(
+            destino, pagesize=A4,
+            rightMargin=1.5*cm, leftMargin=1.5*cm,
+            topMargin=1.5*cm, bottomMargin=1.5*cm,
+        )
+        styles = getSampleStyleSheet()
+        s_tit = ParagraphStyle("t", parent=styles["Heading1"],
+                                fontSize=13, textColor=colors.HexColor("#0f172a"),
+                                spaceAfter=2)
+        s_sub = ParagraphStyle("s", parent=styles["Normal"],
+                                fontSize=9, textColor=colors.HexColor("#475569"),
+                                spaceAfter=10)
+        s_rod = ParagraphStyle("r", parent=styles["Normal"],
+                                fontSize=7, textColor=colors.HexColor("#94a3b8"),
+                                alignment=TA_CENTER)
+
+        story = []
+        story.append(Paragraph("Relatorio de Pagamentos", s_tit))
+        story.append(Paragraph(
+            f"Casa: {casa}   |   Data: {data_extenso}   |   "
+            f"Total: {total_fmt}   |   Lancado por: {meu_nome}", s_sub))
+
+        col_w  = [6.5*cm, 4*cm, 2*cm, 2.5*cm]
+        header = ["Descricao / Favorecido", "Categoria", "ID Evento", "Valor"]
+        rows   = [header]
+
+        for it in itens:
+            if not isinstance(it, dict):
+                continue
+            try:
+                desc  = str(it.get("_descricao",""))[:55]
+                cat   = str(it.get("_categoria",""))[:25]
+                id_ev = str(it.get("_payload",{}).get("idevento","") or "—")
+                valor = brl(it.get("_valor", 0))
+                rows.append([desc, cat, id_ev, valor])
+            except Exception:
+                pass
+
+        rows.append(["", "TOTAL GERAL", "", total_fmt])
+
+        AZUL  = colors.HexColor("#0f172a")
+        CINZA = colors.HexColor("#f8fafc")
+        AZUL_L= colors.HexColor("#dbeafe")
+        BORDA = colors.HexColor("#e2e8f0")
+
+        tbl = Table(rows, colWidths=col_w, repeatRows=1)
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND",    (0,0),  (-1,0),  AZUL),
+            ("TEXTCOLOR",     (0,0),  (-1,0),  colors.white),
+            ("FONTNAME",      (0,0),  (-1,0),  "Helvetica-Bold"),
+            ("FONTSIZE",      (0,0),  (-1,0),  9),
+            ("ALIGN",         (0,0),  (-1,0),  "CENTER"),
+            ("TOPPADDING",    (0,0),  (-1,0),  7),
+            ("BOTTOMPADDING", (0,0),  (-1,0),  7),
+            ("FONTSIZE",      (0,1),  (-1,-2), 8),
+            ("ROWBACKGROUNDS",(0,1),  (-1,-2), [colors.white, CINZA]),
+            ("GRID",          (0,0),  (-1,-1), 0.4, BORDA),
+            ("VALIGN",        (0,0),  (-1,-1), "MIDDLE"),
+            ("TOPPADDING",    (0,1),  (-1,-2), 4),
+            ("BOTTOMPADDING", (0,1),  (-1,-2), 4),
+            ("ALIGN",         (3,1),  (3,-1),  "RIGHT"),
+            ("BACKGROUND",    (0,-1), (-1,-1), AZUL_L),
+            ("FONTNAME",      (0,-1), (-1,-1), "Helvetica-Bold"),
+            ("FONTSIZE",      (0,-1), (-1,-1), 9),
+            ("ALIGN",         (1,-1), (3,-1),  "RIGHT"),
+            ("TOPPADDING",    (0,-1), (-1,-1), 6),
+            ("BOTTOMPADDING", (0,-1), (-1,-1), 6),
+        ]))
+
+        story.append(tbl)
+        story.append(Spacer(1, 0.4*cm))
+        story.append(Paragraph(
+            f"Gerado em {hoje.strftime('%d/%m/%Y %H:%M')} | Magical Conciliacao",
+            s_rod))
+
+        doc.build(story)
+        return destino
 
     def _notificar_grupo_casa(self, casa, msg):
         try:
