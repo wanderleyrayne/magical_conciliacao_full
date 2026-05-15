@@ -890,35 +890,40 @@ class SystemRepository:
             )
             conn.commit()
             return cursor.lastrowid
-
     def check_already_launched(self, partner_name: str, file_name: str,
                                 linha: int, descricao: str, valor: float,
+                                data_pagamento: str = "",
                                 dry_run: bool = False) -> dict | None:
         """
         Verifica se um item já foi lançado anteriormente com sucesso.
-        Retorna dict com info do lançamento anterior ou None se não foi lançado.
+        Compara por: parceiro + descricao + valor + data_pagamento.
         Ignora lançamentos em modo simulação.
+
+        Nao usa file_name + linha pois o mesmo arquivo pode ser reenviado
+        em datas diferentes com despesas diferentes na mesma linha.
         """
         with self.db.connect() as conn:
             row = conn.execute(
                 """
-                SELECT i.id, i.status, i.id_api, b.created_at, b.id as batch_id
+                SELECT i.id, i.status, i.id_api, b.created_at, b.id as batch_id,
+                       i.descricao, i.valor, i.data_pagamento
                 FROM erp_launch_items i
                 JOIN erp_launch_batches b ON i.batch_id = b.id
-                WHERE b.partner_name = ?
-                  AND b.file_name    = ?
-                  AND i.linha_excel  = ?
-                  AND i.status       = 'LANCADO'
-                  AND b.dry_run      = 0
+                WHERE b.partner_name   = ?
+                  AND i.descricao      = ?
+                  AND round(i.valor,2) = round(?,2)
+                  AND i.data_pagamento = ?
+                  AND i.status         = 'LANCADO'
+                  AND b.dry_run        = 0
                 ORDER BY b.created_at DESC
                 LIMIT 1
                 """,
-                (partner_name, file_name, linha)
+                (partner_name, descricao[:200], float(valor or 0), data_pagamento)
             ).fetchone()
         if row:
             return dict(row)
         return None
-
+    
     def save_erp_launch_item(
         self,
         batch_id: int,

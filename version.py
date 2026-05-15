@@ -1,5 +1,5 @@
 APP_NAME    = "Magical Conciliação"
-APP_VERSION = "4.0.0"
+APP_VERSION = "4.1.1"
 APP_AUTHOR  = "Rayne Tecnologia"
 
 # GitHub — repositório onde os Releases são publicados

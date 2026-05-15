@@ -326,7 +326,7 @@ class ErpHistoryWindow:
     # =========================================================================
 
     def _gerar_pdf_lote(self):
-        """Gera PDF com os itens do lote selecionado."""
+        """Gera PDF com os itens do lote selecionado ou todos do dia."""
         sel = self.batch_tree.selection()
         if not sel:
             messagebox.showwarning("PDF", "Selecione um lote primeiro.",
@@ -339,11 +339,81 @@ class ErpHistoryWindow:
             parceiro = vals[2] if len(vals) > 2 else ""
             data_str = vals[1] if len(vals) > 1 else ""
 
-            items = self.repo.get_erp_launch_items(batch_id)
-            if not items:
-                messagebox.showwarning("PDF",
-                    "Nenhum item encontrado neste lote.", parent=self.win)
+            # Pergunta: este lote ou todos do dia?
+            import tkinter as _tk2
+            from tkinter import simpledialog as _sd
+
+            popup = _tk2.Toplevel(self.win)
+            popup.title("Gerar PDF")
+            popup.geometry("380x160")
+            popup.resizable(False, False)
+            popup.grab_set()
+            popup.focus_set()
+
+            escolha = _tk2.StringVar(value="")
+
+            _tk2.Label(popup,
+                text="Qual período deseja incluir no PDF?",
+                font=("Arial", 10, "bold"), pady=12).pack()
+
+            bf = _tk2.Frame(popup)
+            bf.pack(pady=8)
+
+            def _escolher(v):
+                escolha.set(v)
+                popup.destroy()
+
+            from tkinter import ttk as _ttk2
+            _ttk2.Button(bf, text="📄  Este lote apenas",
+                command=lambda: _escolher("lote")).pack(side="left", padx=8, ipadx=6)
+            _ttk2.Button(bf, text="📋  Todos os lançamentos de hoje",
+                command=lambda: _escolher("hoje")).pack(side="left", padx=8, ipadx=6)
+            _ttk2.Button(bf, text="Cancelar",
+                command=lambda: _escolher("")).pack(side="left", padx=8)
+
+            popup.wait_window()
+
+            if not escolha.get():
                 return
+
+            if escolha.get() == "hoje":
+                # Busca todos os itens do parceiro lançados hoje
+                from datetime import date as _date_hoje2
+                hoje_str = _date_hoje2.today().strftime("%Y-%m-%d")
+                try:
+                    import sqlite3 as _sq3
+                    db_path = str(self.repo.db.db_path)
+                    with _sq3.connect(db_path) as conn:
+                        rows = conn.execute("""
+                            SELECT i.* FROM erp_launch_items i
+                            JOIN erp_launch_batches b ON i.batch_id = b.id
+                            WHERE b.partner_name = ?
+                              AND date(b.created_at) = ?
+                              AND i.status IN ('LANCADO','SIMULADO')
+                            ORDER BY i.id ASC
+                        """, (parceiro, hoje_str)).fetchall()
+                        cols = [d[0] for d in conn.execute(
+                            "SELECT * FROM erp_launch_items LIMIT 0").description]
+                    items = [dict(zip(cols, r)) for r in rows]
+                except Exception as e:
+                    messagebox.showerror("Erro",
+                        f"Erro ao buscar itens do dia:\n{e}", parent=self.win)
+                    return
+
+                if not items:
+                    messagebox.showwarning("PDF",
+                        f"Nenhum lançamento encontrado hoje para {parceiro}.",
+                        parent=self.win)
+                    return
+
+                data_str = f"{_date_hoje2.today().strftime('%Y-%m-%d')} 00:00"
+
+            else:
+                items = self.repo.get_erp_launch_items(batch_id)
+                if not items:
+                    messagebox.showwarning("PDF",
+                        "Nenhum item encontrado neste lote.", parent=self.win)
+                    return
 
             self._gerar_pdf_pagamentos(parceiro, data_str, items)
 
@@ -446,7 +516,7 @@ class ErpHistoryWindow:
             s_sub))
 
         # Tabela de itens
-        col_w = [6.5*cm, 4*cm, 2*cm, 2.5*cm, 2.0*cm]
+        col_w = [9.5*cm, 4.5*cm, 1.8*cm, 2.0*cm, 1.8*cm]
         header = ["Descricao / Favorecido", "Categoria", "ID Evento", "Valor", "Status"]
         rows   = [header]
 

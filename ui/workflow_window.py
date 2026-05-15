@@ -552,19 +552,16 @@ class WorkflowWindow:
                                 ),
                                 nome_arquivo=os.path.basename(pdf_path)
                             )
-                        self._notificar_grupo_casa_botoes(
-                            casa=casa,
-                            titulo="Magical - Lancamento Concluido",
-                            corpo=(
-                                f"Casa: {casa}\n"
-                                f"Lancado por: {meu_nome}\n\n"
-                                f"Deseja aprovar o lancamento?"
-                            ),
-                            botoes=[
-                                {"id": f"sim_op_{casa.lower()}", "text": "Sim"},
-                                {"id": f"nao_op_{casa.lower()}", "text": "Nao"},
-                            ]
+                        msg_aprov = (
+                            f"*{casa} — Lançamento Concluído*\n\n"
+                            f"Casa: {casa}\n"
+                            f"Lançado por: {meu_nome}\n\n"
+                            f"Para APROVAR responda:\n"
+                            f"SIM ou OK\n\n"
+                            f"Para REPROVAR responda:\n"
+                            f"NÃO [motivo]"
                         )
+                        n.enviar_grupo(grupo_id, msg_aprov)
 
                 self.win.after(0, self._load)
             except Exception as e:
@@ -617,7 +614,7 @@ class WorkflowWindow:
 
                 col_map = {}
                 for col in df.columns:
-                    c = str(col).upper()
+                    c = str(col).upper().strip()
                     if "VALOR" in c and "VALOR" not in col_map.values():
                         col_map[col] = "VALOR"
                     elif "FAVORECIDO" in c:
@@ -628,7 +625,70 @@ class WorkflowWindow:
                         col_map[col] = "CPF_CNPJ"
                     elif "FORMA" in c:
                         col_map[col] = "FORMA_PGTO"
+                    elif c in ("BANCO",):
+                        col_map[col] = "BANCO"
+                    elif "AG" in c and ("CIA" in c or "NCIA" in c or c == "AGENCIA"):
+                        col_map[col] = "AGENCIA"
+                    elif c == "CONTA":
+                        col_map[col] = "CONTA"
+                    elif "DATA" in c and "PAGAMENTO" in c and "DATA" not in col_map.values():
+                        col_map[col] = "DATA"
+                    elif "DATA" in c and "DATA" not in col_map.values():
+                        col_map[col] = "DATA"
                 df = df.rename(columns=col_map)
+
+                # ── Filtro de data ─────────────────────────────────────────
+                hoje_dt = pd.Timestamp.today().normalize()
+                datas_unicas = set()
+                if "DATA" in df.columns:
+                    for v in df["DATA"].dropna():
+                        try:
+                            dt = pd.to_datetime(str(v).strip(), dayfirst=True, errors="coerce")
+                            if pd.notna(dt):
+                                datas_unicas.add(dt.normalize())
+                        except Exception:
+                            pass
+
+                tem_retroativas = any(d < hoje_dt for d in datas_unicas)
+                tem_futuras     = any(d > hoje_dt for d in datas_unicas)
+                data_filtro     = hoje_dt
+
+                if tem_retroativas or tem_futuras:
+                    avisos = []
+                    if tem_retroativas:
+                        datas_r = sorted(d for d in datas_unicas if d < hoje_dt)
+                        avisos.append("Datas passadas: " + ", ".join(d.strftime("%d/%m/%Y") for d in datas_r))
+                    if tem_futuras:
+                        datas_f = sorted(d for d in datas_unicas if d > hoje_dt)
+                        avisos.append("Datas futuras: " + ", ".join(d.strftime("%d/%m/%Y") for d in datas_f))
+
+                    msg_aviso = (
+                        f"A planilha contém datas diferentes de hoje ({hoje_dt.strftime('%d/%m/%Y')}):\n\n"
+                        + "\n".join(avisos)
+                        + "\n\nIncluir SOMENTE pagamentos de hoje no CNAB?"
+                    )
+                    import queue as _queue
+                    resp_q = _queue.Queue()
+                    def _perguntar():
+                        r = messagebox.askyesno("Filtro de Data", msg_aviso, parent=self.win)
+                        resp_q.put(r)
+                    self.win.after(0, _perguntar)
+                    so_hoje = resp_q.get(timeout=60)
+                    if not so_hoje:
+                        data_filtro = None
+
+                if data_filtro is not None and "DATA" in df.columns:
+                    def _eh_data_filtro(v):
+                        try:
+                            dt = pd.to_datetime(str(v).strip(), dayfirst=True, errors="coerce")
+                            if pd.isna(dt):
+                                return True
+                            return dt.normalize() == data_filtro
+                        except Exception:
+                            return True
+                    df = df[df["DATA"].apply(_eh_data_filtro)].reset_index(drop=True)
+                    print(f"[CNAB] Filtro data={data_filtro.strftime('%d/%m/%Y')}: {len(df)} linhas")
+
 
                 from core.cnab_itau import (
                     GeradorCNAB240,
@@ -820,19 +880,18 @@ class WorkflowWindow:
                 vt = float(vals.get("total_valor", 0))
                 self.cloud.confirmar_cnab_gerado(pid, casa, meu_nome, vt)
 
-                self._notificar_grupo_casa_botoes(
-                    casa=casa,
-                    titulo="Magical — Lote de Pagamento no Itaú",
-                    corpo=(
-                        f"Casa: {casa}\nGerado por: {meu_nome}\n"
-                        f"Total: {self._brl(vt)}\nPagamentos: {len(pagamentos)}\n\n"
-                        f"Deseja aprovar o pagamento?"
-                    ),
-                    botoes=[
-                        {"id": f"sim_fin_{casa.lower()}", "text": "✅ Sim"},
-                        {"id": f"nao_fin_{casa.lower()}", "text": "❌ Não"},
-                    ]
+                msg_fin = (
+                    f"*{casa} — Lote de Pagamento no Itaú*\n\n"
+                    f"Casa: {casa}\n"
+                    f"Gerado por: {meu_nome}\n"
+                    f"Total: {self._brl(vt)}\n"
+                    f"Pagamentos: {len(pagamentos)}\n\n"
+                    f"Para APROVAR o pagamento responda:\n"
+                    f"SIM ou OK\n\n"
+                    f"Para REPROVAR responda:\n"
+                    f"NÃO [motivo]"
                 )
+                self._notificar_grupo_casa(casa, msg_fin)
 
                 import subprocess
                 subprocess.Popen(f'explorer "{downloads}"')
