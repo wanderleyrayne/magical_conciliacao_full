@@ -1069,19 +1069,25 @@ class WorkflowWindow:
 
     def _notificar_grupo_casa(self, casa, msg):
         try:
+            import requests as _req
             evo_url   = self._get_cfg("evo_url")
             evo_key   = self._get_cfg("evo_key")
             instancia = self._get_cfg("evo_instancia", "wanderley")
             chave_cfg = f"grupo_{casa.lower().replace(' ','_')}"
             grupo_id  = self._get_cfg(chave_cfg)
+            print(f"[NOTIF] casa={casa} chave={chave_cfg} grupo={grupo_id} url={evo_url}")
             if not evo_url or not grupo_id:
+                print(f"[NOTIF] SKIP — evo_url ou grupo_id vazio")
                 return
-            from notificador import Notificador
-            n = Notificador(evo_url, evo_key, instancia)
-            if n.status_instancia().get("conectado"):
-                n.enviar_grupo(grupo_id, msg)
-        except Exception:
-            pass
+            r = _req.post(
+                f"{evo_url}/message/sendText/{instancia}",
+                headers={"apikey": evo_key, "Content-Type": "application/json"},
+                json={"number": grupo_id, "text": msg},
+                timeout=20
+            )
+            print(f"[NOTIF] status={r.status_code} resp={r.text[:80]}")
+        except Exception as e:
+            print(f"[NOTIF] ERRO: {e}")
 
     def _notificar_grupo_casa_botoes(self, casa, titulo, corpo, botoes):
         """Envia mensagem com botoes clicaveis para o grupo da casa."""
