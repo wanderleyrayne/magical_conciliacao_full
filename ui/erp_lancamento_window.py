@@ -1061,11 +1061,12 @@ class ErpLancamentoWindow:
                 linha_num = idx + 5
 
                 ja_lancado = self.repo.check_already_launched(
-                    partner_name=partner,
-                    file_name=file_name,
-                    linha=linha_num,
-                    descricao=str(row.get(self.COL_LANCAMENTO) or ""),
-                    valor=abs(float(row.get(self.COL_VALOR) or 0)),
+                    partner_name   = partner,
+                    file_name      = file_name,
+                    linha          = idx + 5,
+                    descricao      = desc_check,
+                    valor          = abs(float(row.get(self.COL_VALOR) or 0)),
+                    data_pagamento = data_fmt,
                 )
                 if ja_lancado:
                     avisos.append(
@@ -1745,8 +1746,6 @@ class ErpLancamentoWindow:
                 evo_url       = get_cfg("evo_url")
                 evo_key       = get_cfg("evo_key")
                 instancia     = get_cfg("evo_instancia", "wanderley")
-                num_marcielo  = get_cfg("num_marcielo")
-                num_wanderley = get_cfg("num_wanderley")
                 meu_nome      = get_cfg("meu_nome", "Sistema")
 
                 if not evo_url or not evo_key:
@@ -1788,9 +1787,10 @@ class ErpLancamentoWindow:
                         f"Verifique os erros no sistema."
                     )
 
-                for num in [num_marcielo, num_wanderley]:
-                    if num:
-                        n.enviar_contato(num, msg)
+                # Notifica apenas o grupo BPO — sem numeros privados
+                grupo_bpo = get_cfg("grupo_aprovacao")
+                if grupo_bpo:
+                    n.enviar_grupo(grupo_bpo, msg)
 
             except Exception:
                 pass

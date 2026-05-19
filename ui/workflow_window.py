@@ -1089,36 +1089,7 @@ class WorkflowWindow:
         except Exception as e:
             print(f"[NOTIF] ERRO: {e}")
 
-    def _notificar_grupo_casa_botoes(self, casa, titulo, corpo, botoes):
-        """Envia mensagem com botoes clicaveis para o grupo da casa."""
-        try:
-            import requests
-            evo_url   = self._get_cfg("evo_url")
-            evo_key   = self._get_cfg("evo_key")
-            instancia = self._get_cfg("evo_instancia", "wanderley")
-            chave_cfg = f"grupo_{casa.lower().replace(' ','_')}"
-            grupo_id  = self._get_cfg(chave_cfg)
-            if not evo_url or not grupo_id:
-                return
-            payload = {
-                "number":  grupo_id,
-                "title":   titulo,
-                "body":    corpo,
-                "footer":  "Magical Conciliacao",
-                "buttons": [{"type": "reply",
-                             "reply": {"id": b["id"], "title": b["text"]}}
-                            for b in botoes],
-            }
-            r = requests.post(
-                f"{evo_url}/message/sendButtons/{instancia}",
-                headers={"apikey": evo_key, "Content-Type": "application/json"},
-                json=payload, timeout=20)
-            if r.status_code not in (200, 201):
-                opcoes = " | ".join(b["text"] for b in botoes)
-                self._notificar_grupo_casa(
-                    casa, titulo + "\n\n" + corpo + "\n\n" + opcoes)
-        except Exception:
-            pass
+
 
     def _brl(self, v):
         try:
