@@ -18,7 +18,7 @@ pb_url    = get_cfg("pb_url")
 pb_email  = get_cfg("pb_email")
 pb_senha  = get_cfg("pb_senha")
 
-print("=== Forcar Notificacao de Aprovacao ===\n")
+print("=== Forcar Notificacao de Aprovacao Operacional ===\n")
 
 resp = requests.post(
     f"{pb_url}/api/collections/_superusers/auth-with-password",
@@ -44,7 +44,7 @@ if not planilhas:
     print("Nenhuma planilha em Ag. Aprov. Operacional.")
     exit(0)
 
-print(f"Planilhas em Ag. Aprov. Operacional:\n")
+print("Planilhas em Ag. Aprov. Operacional:\n")
 for i, p in enumerate(planilhas):
     vf = f"R$ {float(p.get('total_valor',0)):,.2f}".replace(",","X").replace(".",",").replace("X",".")
     print(f"  [{i}] {p.get('casa','')} | {vf} | {p.get('nome_arquivo','')[:40]}")
@@ -72,15 +72,16 @@ for p in selecionadas:
                 (chave_grupo, grupo_id)
             )
             conn.commit()
+        print(f"  Grupo salvo!")
 
     msg = (
-        f"*Magical \u2014 Lan\u00e7amento Conclu\u00eddo*\n\n"
+        f"*{casa} \u2014 Lan\u00e7amento Conclu\u00eddo*\n\n"
         f"Casa: {casa}\n"
         f"Lan\u00e7ado por: {lancado_por}\n\n"
-        f"Para aprovar responda:\n"
-        f"APROVAR OPERACIONAL {casa.upper()}\n\n"
-        f"Para reprovar responda:\n"
-        f"REPROVAR OPERACIONAL {casa.upper()} [motivo]"
+        f"Para APROVAR responda:\n"
+        f"SIM ou OK\n\n"
+        f"Para REPROVAR responda:\n"
+        f"N\u00c3O [motivo]"
     )
 
     print(f"\n[{casa}] Enviando para {grupo_id}...")

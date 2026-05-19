@@ -25,6 +25,36 @@ GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 TIMEOUT_CHECK  = 10
 TIMEOUT_DOWN   = 120
 
+# Token GitHub opcional — necessario se o repositorio for privado
+# Gere em: https://github.com/settings/tokens (scope: repo)
+# Salve nas configuracoes do sistema ou defina aqui diretamente
+GITHUB_TOKEN   = ""  # ex: "ghp_xxxxxxxxxxxxxxxxxxxx"
+
+
+def _get_github_token() -> str:
+    """Tenta buscar token do banco local, senao usa a constante acima."""
+    if GITHUB_TOKEN:
+        return GITHUB_TOKEN
+    try:
+        import sqlite3
+        from pathlib import Path
+        import os
+        candidatos = [
+            Path("data/conciliacao.db"),
+            Path(os.environ.get("APPDATA","")) / "Magical_Conciliacao" / "data" / "conciliacao.db",
+        ]
+        for db in candidatos:
+            if db.exists():
+                with sqlite3.connect(str(db)) as conn:
+                    row = conn.execute(
+                        "SELECT valor FROM app_settings WHERE key='github_token' LIMIT 1"
+                    ).fetchone()
+                    if row and row[0]:
+                        return row[0]
+    except Exception:
+        pass
+    return ""
+
 
 def _versao_tuple(v: str) -> tuple:
     try:
@@ -40,17 +70,21 @@ def verificar_atualizacao(versao_atual: str) -> dict:
     ctx.check_hostname = False
     ctx.verify_mode    = ssl.CERT_NONE
 
+    token = _get_github_token()
     headers = {
         "User-Agent": "MagicalConciliacao-Updater/2.0",
         "Accept":     "application/vnd.github.v3+json",
     }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
 
     try:
         req  = urllib.request.Request(GITHUB_API_URL, headers=headers)
         resp = urllib.request.urlopen(req, timeout=TIMEOUT_CHECK, context=ctx)
         data = json.loads(resp.read().decode("utf-8"))
     except Exception as e:
-        log.warning(f"[UPDATER] Erro ao verificar: {e}")
+        # Repositorio privado ou sem conexao — ignora silenciosamente
+        log.debug(f"[UPDATER] Verificacao ignorada: {e}")
         return None
 
     versao_nova = data.get("tag_name", "").lstrip("vV")
@@ -81,7 +115,11 @@ def baixar_atualizacao(url, nome, progress_cb=None, cancel_event=None):
     destino = Path.home() / "Downloads" / nome
 
     try:
-        req  = urllib.request.Request(url, headers={"User-Agent": "MagicalConciliacao-Updater/2.0"})
+        dl_headers = {"User-Agent": "MagicalConciliacao-Updater/2.0"}
+        token = _get_github_token()
+        if token:
+            dl_headers["Authorization"] = f"Bearer {token}"
+        req  = urllib.request.Request(url, headers=dl_headers)
         resp = urllib.request.urlopen(req, timeout=TIMEOUT_DOWN, context=ctx)
         total   = int(resp.headers.get("Content-Length", 0))
         baixado = 0

@@ -3,9 +3,8 @@ REM ============================================================
 REM  BUILD Magical Conciliacao - arquivo unico (.exe)
 REM  Execute: build.bat
 REM ============================================================
-
 echo.
-echo  Magical Conciliacao - Build
+echo  Magical Conciliacao - Build v5.0.0
 echo ============================================================
 
 if exist build rmdir /s /q build
@@ -38,20 +37,37 @@ pyinstaller ^
   --hidden-import tkinter.messagebox ^
   --hidden-import tkinter.filedialog ^
   --hidden-import tkinter.scrolledtext ^
+  --hidden-import reportlab ^
+  --hidden-import reportlab.lib ^
+  --hidden-import reportlab.lib.pagesizes ^
+  --hidden-import reportlab.lib.colors ^
+  --hidden-import reportlab.lib.units ^
+  --hidden-import reportlab.lib.styles ^
+  --hidden-import reportlab.lib.enums ^
+  --hidden-import reportlab.platypus ^
+  --hidden-import reportlab.platypus.tables ^
+  --hidden-import reportlab.platypus.paragraph ^
+  --hidden-import reportlab.pdfgen ^
+  --hidden-import reportlab.pdfgen.canvas ^
   --collect-submodules pandas ^
   --collect-submodules openpyxl ^
   --collect-submodules numpy ^
+  --collect-submodules reportlab ^
   --collect-data openpyxl ^
+  --collect-data reportlab ^
   main.py
 
 if %ERRORLEVEL% EQU 0 (
   echo.
-  echo  Build concluido!
+  echo  Build concluido com sucesso!
   echo  Executavel: dist\Magical_Conciliacao.exe
   dir dist\Magical_Conciliacao.exe | find "Magical"
+  echo.
+  echo  Proximos passos:
+  echo  1. Teste o executavel em dist\Magical_Conciliacao.exe
+  echo  2. Faca upload para a release v5.0.0 no GitHub
 ) else (
   echo.
-  echo  ERRO no build.
+  echo  ERRO no build! Verifique as mensagens acima.
 )
-
 pause
