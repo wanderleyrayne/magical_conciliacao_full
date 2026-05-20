@@ -22,8 +22,8 @@ log = logging.getLogger("magical_conciliacao")
 
 GITHUB_REPO    = "wanderleyrayne/magical_conciliacao_full"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-TIMEOUT_CHECK  = 10
-TIMEOUT_DOWN   = 120
+TIMEOUT_CHECK  = 15
+TIMEOUT_DOWN   = 300  # 5 minutos para arquivos grandes
 
 # Token GitHub opcional — necessario se o repositorio for privado
 # Gere em: https://github.com/settings/tokens (scope: repo)
@@ -197,16 +197,24 @@ class UpdaterDialog:
 
     def _baixar(self):
         self.btn.config(state="disabled")
-        self.lbl.config(text="Baixando...", fg="#2563eb")
+        self.lbl.config(text="Conectando...", fg="#2563eb")
+        self.bar.config(mode="indeterminate")
+        self.bar.start(10)
         self._cancel.clear()
 
         def _run():
             def _prog(p):
                 try:
-                    self.win.after(0, lambda pct=p: (
-                        self.bar.config(value=pct),
-                        self.lbl.config(text=f"Baixando... {pct}%")
-                    ))
+                    def _upd(pct=p):
+                        self.bar.stop()
+                        self.bar.config(mode="determinate", value=pct)
+                        mb_total = 56  # aprox
+                        mb_baixado = pct * mb_total / 100
+                        self.lbl.config(
+                            text=f"Baixando... {pct}%  ({mb_baixado:.0f}/{mb_total} MB)",
+                            fg="#2563eb"
+                        )
+                    self.win.after(0, _upd)
                 except Exception:
                     pass
 
